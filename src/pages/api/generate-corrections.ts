@@ -1,11 +1,9 @@
 import type { APIRoute } from 'astro';
-import { existsSync, readFileSync, unlinkSync, appendFileSync, writeFileSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { execFileSync } from 'child_process';
 
 const MODELS_DIR = join(process.cwd(), 'src', 'models');
-const TRACE_FILE = join(process.cwd(), 'UserSpeach.trace');
-const TRACE_TIPS = join(process.cwd(), 'Tips.trace');
 const TEMP_DIR = join(process.cwd(), 'temp');
 const LLAMA_BIN_DIRS = [
   join(MODELS_DIR, 'llama-b10182-bin-win-cpu-x64'),
@@ -36,27 +34,37 @@ function getGemmaModelPath(): string {
   return candidates[0];
 }
 
+const PATTERN_LIST = [
+  'VERB_TENSE', 'PREPOSITIONS', 'AGE_EXPRESSION', 'CONNECTORS',
+  'REDUNDANCY', 'NATURAL_EXPRESSION', 'VOCABULARY_CHOICE', 'COLLOCATIONS',
+  'COMPARATIVES_SUPERLATIVES', 'COUNTABLE_UNCOUNTABLE', 'AUXILIARY_VERBS',
+  'WORD_ORDER', 'PRONOUNS', 'PLURALS', 'ARTICLES', 'OTHER'
+];
+
 export const prerender = false;
 
 export const POST: APIRoute = async () => {
   try {
+    const { initDB, getPendingMessages, insertCorrection, markAnalyzed, getCorrectionsByPattern, getUnanalyzedCount } = await import('../../lib/database');
+    await initDB();
+
+    const pending = await getPendingMessages();
+    if (pending.length === 0) {
+      const corrections = await getCorrectionsByPattern();
+      return new Response(JSON.stringify({ corrections, unanalyzed: 0 }), {
+        status: 200, headers: { 'Content-Type': 'application/json' }
+      });
+    }
+
     const modelPath = getGemmaModelPath();
     const llamaCli = findLlamaCli();
     if (!existsSync(llamaCli)) {
       return new Response(JSON.stringify({ error: 'llama-cli.exe not found' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    let traceContent = '';
-    if (existsSync(TRACE_FILE)) {
-      traceContent = readFileSync(TRACE_FILE, 'utf8').trim();
-    }
-
-    if (!traceContent) {
-      return new Response(JSON.stringify({ error: 'No speech data found. Start speaking first!' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-
-    const systemPrompt = `You are an English teacher. Review the student's sentences and provide grammar corrections and tips. Be concise and encouraging.`;
-    const userPrompt = `Review these English sentences and provide corrections and tips for each one:\n\n${traceContent}\n\nFor each sentence, give: the correction (if needed) and a brief grammar tip. Format each entry as:\n**Sentence:** ...\n**Correction:** ...\n**Tip:** ...`;
+    const sentences = pending.map(m => `"${m.text}"`).join('\n');
+    const systemPrompt = 'You are an English teacher. Classify each grammar error with one of these pattern codes: ' + PATTERN_LIST.join(', ');
+    const userPrompt = `Review these sentences and for each one find grammar mistakes. Format each result as:\n**Sentence:** original text\n**Correction:** corrected version\n**Tip:** brief explanation\n**Pattern:** PATTERN_CODE\n\nSentences:\n${sentences}`;
 
     const ts = Date.now();
     const outFile = join(TEMP_DIR, `corr-${ts}.txt`);
@@ -65,7 +73,7 @@ export const POST: APIRoute = async () => {
       '-sys', systemPrompt,
       '-p', userPrompt,
       '-o', outFile,
-      '-n', '400',
+      '-n', '500',
       '--temp', '0.3',
       '--repeat-penalty', '1.0',
       '--single-turn',
@@ -77,30 +85,40 @@ export const POST: APIRoute = async () => {
       stdio: 'pipe',
     });
 
-    let result = '';
+    let raw = '';
     if (existsSync(outFile)) {
-      result = readFileSync(outFile, 'utf8').trim();
+      raw = readFileSync(outFile, 'utf8').trim();
     }
     try { unlinkSync(outFile); } catch (_) {}
 
-    // Append corrections to Tips.trace and clear UserSpeach.trace
-    if (result) {
-      // Extract only the Assistant response (after "Assistant:")
-      const asstIdx = result.indexOf('Assistant:');
-      const cleanResult = asstIdx !== -1 ? result.substring(asstIdx + 'Assistant:'.length).trim() : result;
-      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-      appendFileSync(TRACE_TIPS, `\n=== ${timestamp} ===\n${cleanResult}\n`, 'utf8');
-      writeFileSync(TRACE_FILE, '', 'utf8');
-      result = cleanResult;
+    // Parse model response
+    const blocks = raw.split(/\*\*Sentence:\*\*/).filter(Boolean);
+    const analyzedIds: number[] = [];
+
+    for (let i = 0; i < blocks.length && i < pending.length; i++) {
+      const block = blocks[i];
+      const original = block.match(/(.*?)(?:\*\*Correction:\*\*|$)/s)?.[1]?.trim() || pending[i].text;
+      const correction = block.match(/\*\*Correction:\*\*(.*?)(?:\*\*Tip:\*\*|$)/s)?.[1]?.trim() || '';
+      const tip = block.match(/\*\*Tip:\*\*(.*?)(?:\*\*Pattern:\*\*|$)/s)?.[1]?.trim() || '';
+      const pattern = block.match(/\*\*Pattern:\*\*(.*)/s)?.[1]?.trim() || 'OTHER';
+      const validPattern = PATTERN_LIST.includes(pattern) ? pattern : 'OTHER';
+
+      if (correction || tip) {
+        await insertCorrection(pending[i].id, original, correction, tip, validPattern);
+      }
+      analyzedIds.push(pending[i].id);
     }
 
-    return new Response(JSON.stringify({ corrections: result || 'No corrections generated.' }), {
+    await markAnalyzed(analyzedIds);
+    const corrections = await getCorrectionsByPattern();
+
+    return new Response(JSON.stringify({ corrections, unanalyzed: 0 }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('Correction generation error:', msg);
-    return new Response(JSON.stringify({ error: msg }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+    return new Response(JSON.stringify({ error: msg, unanalyzed: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 };
