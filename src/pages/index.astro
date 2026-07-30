@@ -1,0 +1,140 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ChatDisplay from '../components/ChatDisplay.astro';
+import AudioRecorder from '../components/AudioRecorder.astro';
+---
+
+<Layout title="FreeSpeak - Practice Speaking">
+  <main class="app">
+    <header class="header">
+      <h1>FreeSpeak</h1>
+      <p class="subtitle">Practice speaking English with AI</p>
+    </header>
+
+    <div class="main-content">
+      <div class="left-panel">
+        <section class="chat-container">
+          <ChatDisplay id="chat" />
+        </section>
+
+        <section class="controls">
+          <AudioRecorder />
+        </section>
+      </div>
+
+      <aside class="right-panel">
+        <h3>Grammar Corrections</h3>
+        <div id="corrections" class="corrections-list">
+          <p class="empty-state">Corrections will appear here</p>
+        </div>
+      </aside>
+    </div>
+  </main>
+</Layout>
+
+<style>
+  .app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 1rem;
+  }
+
+  .header {
+    text-align: center;
+    padding: 0.5rem 0;
+  }
+
+  .header h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-top: 0.25rem;
+  }
+
+  .main-content {
+    display: flex;
+    flex: 1;
+    gap: 1rem;
+    min-height: 0;
+  }
+
+  .left-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .chat-container {
+    flex: 1;
+    overflow-y: auto;
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    margin-bottom: 1rem;
+  }
+
+  .controls {
+    display: flex;
+    justify-content: center;
+    padding: 0.5rem 0;
+  }
+
+  .right-panel {
+    width: 280px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    overflow-y: auto;
+  }
+
+  .right-panel h3 {
+    font-size: 1rem;
+    margin-bottom: 0.75rem;
+    color: var(--text);
+  }
+
+  .corrections-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .empty-state {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    text-align: center;
+    padding: 2rem 0;
+  }
+
+  .correction-item {
+    background: var(--bg);
+    border-left: 3px solid var(--primary);
+    padding: 0.75rem;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.85rem;
+    line-height: 1.4;
+  }
+
+  .correction-item .correction-original {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .correction-item .correction-text {
+    color: var(--text);
+  }
+</style>

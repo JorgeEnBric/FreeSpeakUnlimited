@@ -1,0 +1,276 @@
+---
+---
+
+<div class="recorder-container">
+  <button id="record-btn" class="record-button" aria-label="Record audio">
+    <svg id="mic-icon" class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+      <line x1="12" y1="19" x2="12" y2="23"></line>
+      <line x1="8" y1="23" x2="16" y2="23"></line>
+    </svg>
+    <svg id="stop-icon" class="stop-icon hidden" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+    </svg>
+  </button>
+  <div class="recorder-actions">
+    <p id="status" class="status">Click to start recording</p>
+    <button id="cancel-btn" class="cancel-button hidden" aria-label="Cancel recording">Cancel</button>
+  </div>
+</div>
+
+<script>
+  let mediaRecorder = null;
+  let mediaStream = null;
+  let audioChunks = [];
+  let isRecording = false;
+  let isCancelled = false;
+
+  const recordBtn = document.getElementById('record-btn');
+  const cancelBtn = document.getElementById('cancel-btn');
+  const micIcon = document.getElementById('mic-icon');
+  const stopIcon = document.getElementById('stop-icon');
+  const status = document.getElementById('status');
+  const chatDisplay = document.getElementById('chat');
+  const correctionsList = document.getElementById('corrections');
+
+  function addMessage(type, text) {
+    if (!chatDisplay) return;
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${type}`;
+    const avatarText = type === 'user' ? 'You' : type === 'transcription' ? 'You*' : 'AI';
+    messageDiv.innerHTML = `
+      <div class="avatar">${avatarText}</div>
+      <div class="content">
+        <p>${text}</p>
+      </div>
+    `;
+    chatDisplay.prepend(messageDiv);
+  }
+
+  async function startRecording() {
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+        if (isCancelled) {
+          isCancelled = false;
+          return;
+        }
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        if (audioBlob.size > 0) await processAudio(audioBlob);
+      };
+
+      mediaRecorder.start();
+      isRecording = true;
+      if (status) status.textContent = 'Recording...';
+      updateUI();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      if (status) status.textContent = `Microphone error: ${msg}`;
+      console.error('Error accessing microphone:', error);
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && isRecording) {
+      mediaRecorder.stop();
+      isRecording = false;
+      updateUI();
+    }
+  }
+
+  function cancelRecording() {
+    if (mediaRecorder && isRecording) {
+      isCancelled = true;
+      mediaRecorder.stop();
+      isRecording = false;
+      if (status) status.textContent = 'Recording cancelled';
+      updateUI();
+    }
+  }
+
+  function updateUI() {
+    if (isRecording) {
+      micIcon?.classList.add('hidden');
+      stopIcon?.classList.remove('hidden');
+      recordBtn.classList.add('recording');
+      cancelBtn?.classList.remove('hidden');
+    } else {
+      micIcon?.classList.remove('hidden');
+      stopIcon?.classList.add('hidden');
+      recordBtn.classList.remove('recording');
+      cancelBtn?.classList.add('hidden');
+    }
+  }
+
+  async function processAudio(audioBlob) {
+    if (status) status.textContent = 'Transcribing with local Whisper...';
+
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.webm');
+
+    try {
+      const response = await fetch('/api/process-audio', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await response.json();
+
+      if (data.transcription) {
+        addMessage('user', data.transcription);
+      }
+      if (data.correction) {
+        addCorrection(data.transcription, data.correction);
+      }
+      if (data.response) {
+        addMessage('assistant', data.response);
+        speakText(data.response);
+      } else if (data.error) {
+        if (status) status.textContent = data.error;
+      }
+    } catch (error) {
+      console.error('Error processing audio:', error);
+      if (status) status.textContent = 'Error processing audio. Try again.';
+    }
+  }
+
+  function addCorrection(original, correction) {
+    if (!correctionsList) return;
+    const emptyState = correctionsList.querySelector('.empty-state');
+    if (emptyState) emptyState.remove();
+
+    const item = document.createElement('div');
+    item.className = 'correction-item';
+    item.innerHTML = `
+      <div class="correction-original">"${original}"</div>
+      <div class="correction-text">${correction}</div>
+    `;
+    correctionsList.prepend(item);
+  }
+
+  function pickVoice() {
+    const voices = window.speechSynthesis.getVoices();
+    // US English female — prefer Google, then Microsoft
+    return voices.find(v => /google/i.test(v.name) && /en[-_]us/i.test(v.lang))
+      || voices.find(v => /female/i.test(v.name) && /en[-_]us/i.test(v.lang))
+      || voices.find(v => /en[-_]us/i.test(v.lang) && !/united kingdom|great britain|uk english/i.test(v.name))
+      || voices.find(v => /female/i.test(v.name) && /english/i.test(v.lang) && !/united kingdom|great britain/i.test(v.lang))
+      || null;
+  }
+
+  function speakText(text) {
+    if ('speechSynthesis' in window) {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.lang = 'en-US';
+      utterance.rate = 0.85;
+      utterance.pitch = 1;
+      utterance.onstart = () => { if (status) status.textContent = 'Speaking...'; };
+      utterance.onend = () => { if (status) status.textContent = 'Click to start recording'; };
+
+      const voice = pickVoice();
+      if (voice) utterance.voice = voice;
+
+      window.speechSynthesis.speak(utterance);
+    }
+  }
+
+  // Ensure voices are loaded before first use
+  if ('speechSynthesis' in window) {
+    window.speechSynthesis.getVoices();
+    window.speechSynthesis.addEventListener('voiceschanged', () => {}, { once: true });
+  }
+
+  recordBtn?.addEventListener('click', () => {
+    if (isRecording) stopRecording();
+    else startRecording();
+  });
+
+  cancelBtn?.addEventListener('click', cancelRecording);
+</script>
+
+<style>
+  .recorder-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .record-button {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: none;
+    background: var(--primary);
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+  }
+
+  .record-button:hover {
+    background: var(--primary-hover);
+    transform: scale(1.05);
+  }
+
+  .record-button.recording {
+    background: var(--recording);
+    animation: pulse 1.5s infinite;
+    box-shadow: 0 4px 20px rgba(220, 38, 38, 0.4);
+  }
+
+  .mic-icon, .stop-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .hidden {
+    display: none;
+  }
+
+  .status {
+    color: var(--text-muted);
+    font-size: 0.875rem;
+    text-align: center;
+  }
+
+  .recorder-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .cancel-button {
+    padding: 0.25rem 0.75rem;
+    border: 1px solid var(--text-muted);
+    border-radius: 4px;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 0.8rem;
+    transition: all 0.2s ease;
+  }
+
+  .cancel-button:hover {
+    border-color: var(--recording);
+    color: var(--recording);
+  }
+
+  @keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+  }
+</style>
