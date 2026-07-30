@@ -1,4 +1,4 @@
-import { existsSync, unlinkSync, readFileSync } from 'fs';
+import { existsSync, unlinkSync, readFileSync, appendFileSync } from 'fs';
 import { join, basename } from 'path';
 
 const MODELS_DIR = join(process.cwd(), 'src', 'models');
@@ -24,6 +24,7 @@ function getLlamaBinDir(): string {
   return LLAMA_BIN_DIRS[0];
 }
 const TEMP_DIR = join(process.cwd(), 'temp');
+const TRACE_FILE = join(process.cwd(), 'UserSpeach.trace');
 
 const GEMMA_MODEL = 'gemma-1.1-2b-it-cpu-int4';
 
@@ -61,11 +62,8 @@ RESPONSE GUIDELINES:
 - Use vocabulary suitable for intermediate learners
 - Do NOT use emojis or emoticons
 
-CORRECTION GUIDELINES:
-- If the student made grammar or vocabulary mistakes, gently correct them
-- Show the correct version in double quotes like "this is the correct way"
-- Always be positive and encouraging after a correction
-- If there are no mistakes, just respond naturally`;
+RESPONSE GUIDELINES (continued):
+- If the student makes grammar mistakes, gently model the correct form in your reply`;
 
 const FALLBACK_RESPONSES = [
   "That's great! Can you tell me more about that?",
@@ -208,35 +206,17 @@ export async function generateResponse(prompt: string): Promise<string> {
   }
 }
 
-export async function processAudio(audioPath: string): Promise<{ transcription: string; response: string; correction: string }> {
+export async function processAudio(audioPath: string): Promise<{ transcription: string; response: string }> {
   const transcription = await transcribeAudio(audioPath);
   const response = await generateResponse(transcription);
 
-  // Extract correction: find quoted text near correction keywords
-  let reply = response;
-  let correction = '';
-  const corrPatterns = [
-    /try saying\s+"([^"]+)"/i,
-    /you mean\s+"([^"]+)"/i,
-    /a better way\s+(?:to say that is|to phrase that is)\s+"([^"]+)"/i,
-    /"([^"]+)"\s+instead/i,
-    /instead\s+of\s+"([^"]+)"/i,
-    /say\s+"([^"]+)"/i,
-  ];
-  for (const p of corrPatterns) {
-    const m = response.match(p);
-    if (m) { correction = m[1]; break; }
-  }
-  // Fallback: first double-quoted text
-  if (!correction) {
-    const m = response.match(/"([^"]+)"/);
-    if (m) correction = m[1];
-  }
+  // Log transcription to trace file
+  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  appendFileSync(TRACE_FILE, `[${timestamp}] ${transcription}\n`, 'utf8');
 
   const MAX_CHARS = 320;
   return {
     transcription,
-    response: reply.length > MAX_CHARS ? reply.substring(0, MAX_CHARS - 3) + '...' : reply,
-    correction: correction.length > MAX_CHARS ? correction.substring(0, MAX_CHARS - 3) + '...' : correction,
+    response: response.length > MAX_CHARS ? response.substring(0, MAX_CHARS - 3) + '...' : response,
   };
 }

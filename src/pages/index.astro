@@ -12,7 +12,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     </header>
 
     <div class="main-content">
-      <div class="left-panel">
+      <div class="chat-area">
         <section class="chat-container">
           <ChatDisplay id="chat" />
         </section>
@@ -22,17 +22,57 @@ import AudioRecorder from '../components/AudioRecorder.astro';
         </section>
       </div>
 
-      <aside class="right-panel">
-        <h3>Grammar Corrections</h3>
-        <div id="corrections" class="corrections-list">
-          <p class="empty-state">Corrections will appear here</p>
+      <aside class="trace-panel">
+        <h3>Trace de Correcciones</h3>
+        <button id="generate-corrections" class="trace-btn">Generar Correcciones</button>
+        <div id="trace-results" class="trace-results">
+          <p class="trace-empty">Presiona el botón para generar correcciones de tu conversación</p>
         </div>
       </aside>
     </div>
   </main>
+
+<script>
+  document.getElementById('generate-corrections')?.addEventListener('click', async () => {
+    const btn = document.getElementById('generate-corrections');
+    const results = document.getElementById('trace-results');
+    if (!btn || !results) return;
+    btn.disabled = true;
+    btn.textContent = 'Generando...';
+    results.innerHTML = '<p class="trace-loading">Analyzing your speech...</p>';
+    try {
+      const res = await fetch('/api/generate-corrections', { method: 'POST' });
+      const data = await res.json();
+      if (data.error) {
+        results.innerHTML = `<div class="trace-error">${data.error}</div>`;
+      } else if (data.corrections) {
+        const blocks = data.corrections.split(/\*\*Sentence:\*\*/).filter(Boolean);
+        let html = '<div class="trace-cards">';
+        for (const block of blocks) {
+          if (!block.includes('**Correction:**') && !block.includes('**Tip:**')) continue;
+          const sentence = block.match(/(.*?)(?:\*\*Correction:\*\*|$)/s)?.[1]?.trim() || '';
+          if (!sentence) continue;
+          const correction = block.match(/\*\*Correction:\*\*(.*?)(?:\*\*Tip:\*\*|$)/s)?.[1]?.trim() || '';
+          const tip = block.match(/\*\*Tip:\*\*(.*)/s)?.[1]?.trim() || '';
+          html += `
+            <div class="corr-card">
+              <div class="corr-row"><span class="corr-bad">${sentence}</span></div>
+              <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${correction || tip}</span></div>
+            </div>`;
+        }
+        html += '</div>';
+        results.innerHTML = html;
+      }
+    } catch (e) {
+      results.innerHTML = '<p class="trace-error">Error generating corrections.</p>';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Generar Correcciones';
+  });
+</script>
 </Layout>
 
-<style>
+<style is:global>
   .app {
     display: flex;
     flex-direction: column;
@@ -69,7 +109,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     min-height: 0;
   }
 
-  .left-panel {
+  .chat-area {
     flex: 1;
     display: flex;
     flex-direction: column;
@@ -91,50 +131,123 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     padding: 0.5rem 0;
   }
 
-  .right-panel {
-    width: 280px;
+  .trace-panel {
+    width: 340px;
     flex-shrink: 0;
     background: var(--surface);
     border-radius: var(--border-radius);
     padding: 1rem;
-    overflow-y: auto;
-  }
-
-  .right-panel h3 {
-    font-size: 1rem;
-    margin-bottom: 0.75rem;
-    color: var(--text);
-  }
-
-  .corrections-list {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
+    border-left: 1px solid rgba(255,255,255,0.06);
   }
 
-  .empty-state {
+  .trace-panel h3 {
+    font-size: 1rem;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+  }
+
+  .trace-panel h3::before {
+    content: '📝';
+    font-size: 1.1rem;
+  }
+
+  .trace-btn {
+    padding: 0.6rem 1rem;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  }
+
+  .trace-btn:hover:not(:disabled) {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+
+  .trace-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .trace-results {
+    flex: 1;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  .trace-empty, .trace-loading, .trace-error {
     color: var(--text-muted);
-    font-size: 0.85rem;
     text-align: center;
-    padding: 2rem 0;
+    padding: 1.5rem 0;
+    font-size: 0.85rem;
   }
 
-  .correction-item {
-    background: var(--bg);
-    border-left: 3px solid var(--primary);
-    padding: 0.75rem;
-    border-radius: 0 6px 6px 0;
-    font-size: 0.85rem;
+  .trace-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+  }
+
+  .corr-card {
+    background: #0f172a;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px;
+    padding: 0.7rem 0.8rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .corr-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.4rem;
+    padding: 0.3rem 0.5rem;
+    border-radius: 6px;
+  }
+
+  .corr-row:first-child {
+    background: rgba(248, 113, 113, 0.08);
+    border-left: 3px solid #f87171;
+  }
+
+  .corr-row:last-child {
+    background: rgba(74, 222, 128, 0.08);
+    border-left: 3px solid #4ade80;
+  }
+
+  .corr-bad {
+    color: #fca5a5;
+    font-size: 0.8rem;
+    text-decoration: line-through;
+    text-decoration-color: #f87171;
     line-height: 1.4;
   }
 
-  .correction-item .correction-original {
+  .corr-arrow {
     color: var(--text-muted);
     font-size: 0.8rem;
-    margin-bottom: 0.25rem;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
   }
 
-  .correction-item .correction-text {
-    color: var(--text);
+  .corr-good {
+    color: #86efac;
+    font-size: 0.85rem;
+    font-weight: 500;
+    line-height: 1.4;
   }
 </style>

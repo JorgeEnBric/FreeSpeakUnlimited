@@ -32,15 +32,14 @@
   const stopIcon = document.getElementById('stop-icon');
   const status = document.getElementById('status');
   const chatDisplay = document.getElementById('chat');
-  const correctionsList = document.getElementById('corrections');
+
 
   function addMessage(type, text) {
     if (!chatDisplay) return;
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
-    const avatarText = type === 'user' ? 'You' : type === 'transcription' ? 'You*' : 'AI';
+    const avatarText = type === 'user' ? '' : type === 'transcription' ? '' : '';
     messageDiv.innerHTML = `
-      <div class="avatar">${avatarText}</div>
       <div class="content">
         <p>${text}</p>
       </div>
@@ -128,9 +127,6 @@
       if (data.transcription) {
         addMessage('user', data.transcription);
       }
-      if (data.correction) {
-        addCorrection(data.transcription, data.correction);
-      }
       if (data.response) {
         addMessage('assistant', data.response);
         speakText(data.response);
@@ -141,20 +137,6 @@
       console.error('Error processing audio:', error);
       if (status) status.textContent = 'Error processing audio. Try again.';
     }
-  }
-
-  function addCorrection(original, correction) {
-    if (!correctionsList) return;
-    const emptyState = correctionsList.querySelector('.empty-state');
-    if (emptyState) emptyState.remove();
-
-    const item = document.createElement('div');
-    item.className = 'correction-item';
-    item.innerHTML = `
-      <div class="correction-original">"${original}"</div>
-      <div class="correction-text">${correction}</div>
-    `;
-    correctionsList.prepend(item);
   }
 
   function pickVoice() {
