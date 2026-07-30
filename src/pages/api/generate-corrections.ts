@@ -71,8 +71,8 @@ export const POST: APIRoute = async () => {
       }
     }
     const sentences = subSentences.map(s => `"${s.text}"`).join('\n');
-    const systemPrompt = 'You are an English teacher. Classify each grammar error with one of these pattern codes: ' + PATTERN_LIST.join(', ');
-    const userPrompt = `Review these sentences and for each one find grammar mistakes. Use EXACTLY this format for each result (no extra labels):\n**Sentence:** original text\n**Correction:** corrected version\n**Tip:** brief explanation\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
+    const systemPrompt = 'You are a strict English teacher. Rules:\n1. If a sentence mentions "yesterday", "last night", "ago", or similar past time words, the verb MUST be in past tense (e.g. "have" → "had", "talk" → "talked").\n2. Fix ALL errors: tense, word order, prepositions, articles, pronouns, collocations.\n3. Output the COMPLETE corrected sentence preserving the original meaning.\n4. Do NOT use **bold** markers in Correction or Tip.\n5. Assign the most specific pattern code from this list: ' + PATTERN_LIST.join(', ');
+    const userPrompt = `Review each sentence and find ALL grammar mistakes. Fix them to produce natural, idiomatic English. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Sentence:** original text\n**Correction:** complete corrected sentence\n**Tip:** what was wrong and why\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
 
     const ts = Date.now();
     const outFile = join(TEMP_DIR, `corr-${ts}.txt`);
@@ -81,7 +81,7 @@ export const POST: APIRoute = async () => {
       '-sys', systemPrompt,
       '-p', userPrompt,
       '-o', outFile,
-      '-n', '800',
+      '-n', '1000',
       '--temp', '0.3',
       '--repeat-penalty', '1.0',
       '--single-turn',
