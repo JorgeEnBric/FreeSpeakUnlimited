@@ -1,10 +1,11 @@
 import type { APIRoute } from 'astro';
-import { existsSync, readFileSync, unlinkSync } from 'fs';
+import { existsSync, readFileSync, unlinkSync, appendFileSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { execFileSync } from 'child_process';
 
 const MODELS_DIR = join(process.cwd(), 'src', 'models');
 const TRACE_FILE = join(process.cwd(), 'UserSpeach.trace');
+const TRACE_TIPS = join(process.cwd(), 'Tips.trace');
 const TEMP_DIR = join(process.cwd(), 'temp');
 const LLAMA_BIN_DIRS = [
   join(MODELS_DIR, 'llama-b10182-bin-win-cpu-x64'),
@@ -81,6 +82,17 @@ export const POST: APIRoute = async () => {
       result = readFileSync(outFile, 'utf8').trim();
     }
     try { unlinkSync(outFile); } catch (_) {}
+
+    // Append corrections to Tips.trace and clear UserSpeach.trace
+    if (result) {
+      // Extract only the Assistant response (after "Assistant:")
+      const asstIdx = result.indexOf('Assistant:');
+      const cleanResult = asstIdx !== -1 ? result.substring(asstIdx + 'Assistant:'.length).trim() : result;
+      const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+      appendFileSync(TRACE_TIPS, `\n=== ${timestamp} ===\n${cleanResult}\n`, 'utf8');
+      writeFileSync(TRACE_FILE, '', 'utf8');
+      result = cleanResult;
+    }
 
     return new Response(JSON.stringify({ corrections: result || 'No corrections generated.' }), {
       status: 200,

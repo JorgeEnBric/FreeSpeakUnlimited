@@ -38,9 +38,8 @@
     if (!chatDisplay) return;
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
-    const avatarText = type === 'user' ? 'You' : type === 'transcription' ? 'You*' : 'AI';
+    const avatarText = type === 'user' ? '' : type === 'transcription' ? '' : '';
     messageDiv.innerHTML = `
-      <div class="avatar">${avatarText}</div>
       <div class="content">
         <p>${text}</p>
       </div>
