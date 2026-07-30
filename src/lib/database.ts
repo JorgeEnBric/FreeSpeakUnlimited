@@ -41,6 +41,12 @@ export async function initDB(): Promise<void> {
     label TEXT NOT NULL,
     description TEXT
   )`);
+  d.run(`CREATE TABLE IF NOT EXISTS logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    source TEXT NOT NULL,
+    message TEXT NOT NULL,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`);
   d.run(`INSERT OR IGNORE INTO patterns VALUES
     ('VERB_TENSE', 'Verb Tense', 'Incorrect use of verb tenses'),
     ('PREPOSITIONS', 'Prepositions', 'Incorrect use of prepositions'),
@@ -60,6 +66,19 @@ export async function initDB(): Promise<void> {
     ('OTHER', 'Other', 'Other types of errors')
   `);
   save();
+}
+
+export async function insertLog(source: string, message: string): Promise<void> {
+  const d = await getDb();
+  d.run('INSERT INTO logs (source, message) VALUES (?, ?)', [source, message]);
+  save();
+}
+
+export async function getLogs(limit = 50): Promise<{ id: number; source: string; message: string; created_at: string }[]> {
+  const d = await getDb();
+  const rows = d.exec('SELECT id, source, message, created_at FROM logs ORDER BY id DESC LIMIT ?', [limit]);
+  if (!rows.length) return [];
+  return rows[0].values.map((r: any) => ({ id: r[0], source: r[1], message: r[2], created_at: r[3] }));
 }
 
 export async function insertMessage(text: string): Promise<number> {

@@ -45,7 +45,7 @@ export const prerender = false;
 
 export const POST: APIRoute = async () => {
   try {
-    const { initDB, getPendingMessages, insertCorrection, markAnalyzed, getCorrectionsByPattern, getUnanalyzedCount } = await import('../../lib/database');
+    const { initDB, getPendingMessages, insertCorrection, markAnalyzed, getCorrectionsByPattern, getUnanalyzedCount, insertLog } = await import('../../lib/database');
     await initDB();
 
     const pending = await getPendingMessages();
@@ -62,9 +62,17 @@ export const POST: APIRoute = async () => {
       return new Response(JSON.stringify({ error: 'llama-cli.exe not found' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
     }
 
-    const sentences = pending.map(m => `"${m.text}"`).join('\n');
+    // Split multi-sentence messages so the model sees each sentence separately
+    const subSentences: { msgId: number; text: string }[] = [];
+    for (const msg of pending) {
+      const parts = msg.text.split('\n').filter(s => s.trim().length > 0);
+      for (const part of parts) {
+        subSentences.push({ msgId: msg.id, text: part.trim() });
+      }
+    }
+    const sentences = subSentences.map(s => `"${s.text}"`).join('\n');
     const systemPrompt = 'You are an English teacher. Classify each grammar error with one of these pattern codes: ' + PATTERN_LIST.join(', ');
-    const userPrompt = `Review these sentences and for each one find grammar mistakes. Format each result as:\n**Sentence:** original text\n**Correction:** corrected version\n**Tip:** brief explanation\n**Pattern:** PATTERN_CODE\n\nSentences:\n${sentences}`;
+    const userPrompt = `Review these sentences and for each one find grammar mistakes. Use EXACTLY this format for each result (no extra labels):\n**Sentence:** original text\n**Correction:** corrected version\n**Tip:** brief explanation\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
 
     const ts = Date.now();
     const outFile = join(TEMP_DIR, `corr-${ts}.txt`);
@@ -73,7 +81,7 @@ export const POST: APIRoute = async () => {
       '-sys', systemPrompt,
       '-p', userPrompt,
       '-o', outFile,
-      '-n', '500',
+      '-n', '800',
       '--temp', '0.3',
       '--repeat-penalty', '1.0',
       '--single-turn',
@@ -91,24 +99,80 @@ export const POST: APIRoute = async () => {
     }
     try { unlinkSync(outFile); } catch (_) {}
 
-    // Parse model response
-    const blocks = raw.split(/\*\*Sentence:\*\*/).filter(Boolean);
-    const analyzedIds: number[] = [];
+    await insertLog('corrections', `Raw model output:\n${raw.substring(0, 2000)}`);
 
-    for (let i = 0; i < blocks.length && i < pending.length; i++) {
-      const block = blocks[i];
-      const original = block.match(/(.*?)(?:\*\*Correction:\*\*|$)/s)?.[1]?.trim() || pending[i].text;
-      const correction = block.match(/\*\*Correction:\*\*(.*?)(?:\*\*Tip:\*\*|$)/s)?.[1]?.trim() || '';
-      const tip = block.match(/\*\*Tip:\*\*(.*?)(?:\*\*Pattern:\*\*|$)/s)?.[1]?.trim() || '';
-      const pattern = block.match(/\*\*Pattern:\*\*(.*)/s)?.[1]?.trim() || 'OTHER';
-      const validPattern = PATTERN_LIST.includes(pattern) ? pattern : 'OTHER';
+    // Extract after "Assistant:" to strip the User prompt echo
+    const asstIdx = raw.lastIndexOf('Assistant:');
+    const body = asstIdx !== -1 ? raw.substring(asstIdx + 'Assistant:'.length).trim() : raw;
+    await insertLog('corrections', `Extracted body (first 500):\n${body.substring(0, 500)}`);
 
-      if (correction || tip) {
-        await insertCorrection(pending[i].id, original, correction, tip, validPattern);
-      }
-      analyzedIds.push(pending[i].id);
+    // Parse all **Sentence:** blocks from model output (may not match 1:1 with pending)
+    const sentMarker = '**Sentence:**';
+    const blocks: string[] = [];
+    let cursor = 0;
+    while (true) {
+      const startIdx = body.indexOf(sentMarker, cursor);
+      if (startIdx === -1) break;
+      const blockStart = startIdx + sentMarker.length;
+      const nextIdx = body.indexOf(sentMarker, blockStart);
+      const block = (nextIdx !== -1 ? body.substring(blockStart, nextIdx) : body.substring(blockStart)).trim();
+      if (block.length >= 5) blocks.push(block);
+      cursor = nextIdx !== -1 ? nextIdx : body.length;
     }
 
+    const corrLabel = '**Correction:**';
+    const tipLabel = '**Tip:**';
+    const patLabel = '**Pattern:**';
+    const patCodeLabel = '**Pattern Code:**';
+
+    function extractAfter(label: string, text: string, endLabels: string[]): string {
+      const start = text.indexOf(label);
+      if (start === -1) return '';
+      const valStart = start + label.length;
+      let valEnd = text.length;
+      for (const el of endLabels) {
+        const ei = text.indexOf(el, valStart);
+        if (ei !== -1 && ei < valEnd) valEnd = ei;
+      }
+      return text.substring(valStart, valEnd).trim();
+    }
+
+    // For each block, find the matching message (allow multiple blocks per message)
+    const analyzedIds: number[] = [];
+
+    for (const block of blocks) {
+      const sentText = extractAfter('', block, [corrLabel]).replace(/\*\*/g, '').trim();
+      const correction = extractAfter(corrLabel, block, [tipLabel, patLabel, patCodeLabel]).replace(/\*\*/g, '').trim();
+      const tip = extractAfter(tipLabel, block, [patLabel, patCodeLabel]).replace(/\*\*/g, '').trim();
+      let patternRaw = extractAfter(patLabel, block, []).trim();
+      if (!patternRaw) patternRaw = extractAfter(patCodeLabel, block, []).trim();
+      const patterns = patternRaw.split(',').map(p => p.trim()).filter(p => PATTERN_LIST.includes(p));
+      const pattern = patterns.length > 0 ? patterns[0] : 'OTHER';
+
+      // Find message whose text contains this block's sentence text
+      let matchedMsg: typeof pending[0] | null = null;
+      for (const msg of pending) {
+        const msgText = msg.text.replace(/\r?\n/g, ' ').trim();
+        if (msgText.includes(sentText) || sentText.includes(msgText)) {
+          matchedMsg = msg;
+          break;
+        }
+      }
+
+      if (!matchedMsg) {
+        await insertLog('corrections', `No message matched: "${sentText.substring(0,60)}"`);
+        continue;
+      }
+
+      await insertLog('corrections', `msg ${matchedMsg.id} pattern=${pattern} corr="${correction.substring(0,60)}" tip="${tip.substring(0,60)}"`);
+
+      if (correction || tip) {
+        await insertCorrection(matchedMsg.id, matchedMsg.text, correction, tip, pattern);
+      }
+    }
+
+    // Mark all pending messages as analyzed
+    for (const msg of pending) analyzedIds.push(msg.id);
     await markAnalyzed(analyzedIds);
     const corrections = await getCorrectionsByPattern();
 
@@ -118,7 +182,7 @@ export const POST: APIRoute = async () => {
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    console.error('Correction generation error:', msg);
+    await insertLog('corrections', `ERROR: ${msg}`);
     return new Response(JSON.stringify({ error: msg, unanalyzed: 0 }), { status: 200, headers: { 'Content-Type': 'application/json' } });
   }
 };
