@@ -1,4 +1,4 @@
-import { existsSync, unlinkSync, readFileSync } from 'fs';
+import { existsSync, unlinkSync, readFileSync, appendFileSync } from 'fs';
 import { join, basename } from 'path';
 
 const MODELS_DIR = join(process.cwd(), 'src', 'models');
@@ -24,6 +24,7 @@ function getLlamaBinDir(): string {
   return LLAMA_BIN_DIRS[0];
 }
 const TEMP_DIR = join(process.cwd(), 'temp');
+const TRACE_FILE = join(process.cwd(), 'UserSpeach.trace');
 
 const GEMMA_MODEL = 'gemma-1.1-2b-it-cpu-int4';
 
@@ -208,6 +209,10 @@ export async function generateResponse(prompt: string): Promise<string> {
 export async function processAudio(audioPath: string): Promise<{ transcription: string; response: string }> {
   const transcription = await transcribeAudio(audioPath);
   const response = await generateResponse(transcription);
+
+  // Log transcription to trace file
+  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
+  appendFileSync(TRACE_FILE, `[${timestamp}] ${transcription}\n`, 'utf8');
 
   const MAX_CHARS = 320;
   return {

@@ -11,14 +11,50 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       <p class="subtitle">Practice speaking English with AI</p>
     </header>
 
-    <section class="chat-container">
-      <ChatDisplay id="chat" />
-    </section>
+    <div class="main-content">
+      <div class="chat-area">
+        <section class="chat-container">
+          <ChatDisplay id="chat" />
+        </section>
 
-    <section class="controls">
-      <AudioRecorder />
-    </section>
+        <section class="controls">
+          <AudioRecorder />
+        </section>
+      </div>
+
+      <aside class="trace-panel">
+        <h3>Trace de Correcciones</h3>
+        <button id="generate-corrections" class="trace-btn">Generar Correcciones</button>
+        <div id="trace-results" class="trace-results">
+          <p class="trace-empty">Presiona el botón para generar correcciones de tu conversación</p>
+        </div>
+      </aside>
+    </div>
   </main>
+
+<script>
+  document.getElementById('generate-corrections')?.addEventListener('click', async () => {
+    const btn = document.getElementById('generate-corrections');
+    const results = document.getElementById('trace-results');
+    if (!btn || !results) return;
+    btn.disabled = true;
+    btn.textContent = 'Generando...';
+    results.innerHTML = '<p class="trace-loading">Analyzing your speech...</p>';
+    try {
+      const res = await fetch('/api/generate-corrections', { method: 'POST' });
+      const data = await res.json();
+      if (data.error) {
+        results.innerHTML = `<p class="trace-error">${data.error}</p>`;
+      } else {
+        results.innerHTML = `<div class="trace-content">${data.corrections.replace(/\n/g, '<br>')}</div>`;
+      }
+    } catch (e) {
+      results.innerHTML = '<p class="trace-error">Error generating corrections.</p>';
+    }
+    btn.disabled = false;
+    btn.textContent = 'Generar Correcciones';
+  });
+</script>
 </Layout>
 
 <style>
@@ -26,7 +62,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     display: flex;
     flex-direction: column;
     height: 100vh;
-    max-width: 800px;
+    max-width: 1100px;
     margin: 0 auto;
     padding: 1rem;
   }
@@ -51,6 +87,20 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     margin-top: 0.25rem;
   }
 
+  .main-content {
+    display: flex;
+    flex: 1;
+    gap: 1rem;
+    min-height: 0;
+  }
+
+  .chat-area {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
   .chat-container {
     flex: 1;
     overflow-y: auto;
@@ -64,5 +114,59 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     display: flex;
     justify-content: center;
     padding: 0.5rem 0;
+  }
+
+  .trace-panel {
+    width: 300px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .trace-panel h3 {
+    font-size: 1rem;
+    color: var(--text);
+  }
+
+  .trace-btn {
+    padding: 0.6rem 1rem;
+    border: none;
+    border-radius: 8px;
+    background: var(--primary);
+    color: white;
+    font-size: 0.85rem;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .trace-btn:hover:not(:disabled) {
+    background: var(--primary-hover);
+  }
+
+  .trace-btn:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .trace-results {
+    flex: 1;
+    overflow-y: auto;
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+
+  .trace-empty, .trace-loading, .trace-error {
+    color: var(--text-muted);
+    text-align: center;
+    padding: 1rem 0;
+  }
+
+  .trace-content {
+    color: var(--text);
+    white-space: pre-wrap;
   }
 </style>
