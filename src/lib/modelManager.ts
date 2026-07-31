@@ -1,5 +1,6 @@
-import { existsSync, unlinkSync, readFileSync, appendFileSync } from 'fs';
+import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
+import { CONVERSATION_SYSTEM_PROMPT as SYSTEM_PROMPT } from './prompts';
 
 const MODELS_DIR = join(process.cwd(), 'src', 'models');
 const WHISPER_BIN_DIR = join(MODELS_DIR, 'whisper-bin-x64');
@@ -24,7 +25,6 @@ function getLlamaBinDir(): string {
   return LLAMA_BIN_DIRS[0];
 }
 const TEMP_DIR = join(process.cwd(), 'temp');
-const TRACE_FILE = join(process.cwd(), 'UserSpeach.trace');
 
 const GEMMA_MODEL = 'gemma-1.1-2b-it-cpu-int4';
 
@@ -47,23 +47,6 @@ function getGemmaModelPath(): string {
   }
   return candidates[0];
 }
-
-const SYSTEM_PROMPT = `You are an English teacher having a conversation with a student for speaking practice.
-
-ROLE:
-- Respond naturally in English
-- Be encouraging and patient
-- Use everyday vocabulary
-- Keep responses conversational and helpful
-
-RESPONSE GUIDELINES:
-- Be concise and to the point (max 2-3 sentences)
-- Focus on practical English usage
-- Use vocabulary suitable for intermediate learners
-- Do NOT use emojis or emoticons
-
-RESPONSE GUIDELINES (continued):
-- If the student makes grammar mistakes, gently model the correct form in your reply`;
 
 const FALLBACK_RESPONSES = [
   "That's great! Can you tell me more about that?",
@@ -151,11 +134,24 @@ export async function generateResponse(prompt: string): Promise<string> {
   if (!status.gemma) {
     return FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
   }
-  if (!status.llamaCli) {
-    return 'llama-cli.exe not found. Download from https://github.com/ggerganov/llama.cpp/releases';
-  }
+
+  const MAX_CHARS = 320;
+  const truncate = (text: string) => text.length > MAX_CHARS ? text.substring(0, MAX_CHARS - 3) + '...' : text;
 
   try {
+    // Try llama-server first (persistent, keeps model in RAM)
+    const { ensureStarted, isRunning, complete } = await import('./llamaServer');
+    await ensureStarted();
+    if (isRunning()) {
+      const result = await complete(prompt, SYSTEM_PROMPT, { n_predict: 70, temperature: 0.7 });
+      if (result) return truncate(result);
+    }
+
+    // Fallback to llama-cli.exe
+    if (!status.llamaCli) {
+      return 'llama-cli.exe not found. Download from https://github.com/ggerganov/llama.cpp/releases';
+    }
+
     const { execFileSync } = await import('child_process');
     const llamaBinDir = getLlamaBinDir();
     const ts = Date.now();
@@ -166,7 +162,7 @@ export async function generateResponse(prompt: string): Promise<string> {
       '-sys', SYSTEM_PROMPT,
       '-p', prompt,
       '-o', outFile,
-      '-n', '80',
+      '-n', '70',
       '--temp', '0.7',
       '--repeat-penalty', '1.0',
       '--single-turn',
@@ -194,10 +190,7 @@ export async function generateResponse(prompt: string): Promise<string> {
       response = FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
     }
 
-    const MAX_CHARS = 320;
-    return response.length > MAX_CHARS
-      ? response.substring(0, MAX_CHARS - 3) + '...'
-      : response;
+    return truncate(response);
 
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -206,17 +199,4 @@ export async function generateResponse(prompt: string): Promise<string> {
   }
 }
 
-export async function processAudio(audioPath: string): Promise<{ transcription: string; response: string }> {
-  const transcription = await transcribeAudio(audioPath);
-  const response = await generateResponse(transcription);
 
-  // Log transcription to trace file
-  const timestamp = new Date().toISOString().replace('T', ' ').substring(0, 19);
-  appendFileSync(TRACE_FILE, `[${timestamp}] ${transcription}\n`, 'utf8');
-
-  const MAX_CHARS = 320;
-  return {
-    transcription,
-    response: response.length > MAX_CHARS ? response.substring(0, MAX_CHARS - 3) + '...' : response,
-  };
-}

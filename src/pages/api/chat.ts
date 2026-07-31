@@ -7,6 +7,7 @@ export const POST: APIRoute = async ({ request }) => {
   try {
     const body = await request.json();
     const text = body.text?.trim();
+    const startTime = body.startTime ? Number(body.startTime) : null;
 
     if (!text) {
       return new Response(JSON.stringify({ error: 'No text provided' }), {
@@ -17,6 +18,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const modelStatus = checkModels();
 
+    const t0 = Date.now();
     let responseText: string;
 
     if (modelStatus.gemma) {
@@ -30,6 +32,12 @@ export const POST: APIRoute = async ({ request }) => {
         "Excellent! You're making great progress with your English."
       ];
       responseText = responses[Math.floor(Math.random() * responses.length)];
+    }
+
+    const modelMs = Date.now() - t0;
+    console.log(`Tiempo en modelo IA: ${Math.round(modelMs / 1000)} segundos`);
+    if (startTime) {
+      console.log(`Tiempo total: ${Math.round((Date.now() - startTime) / 1000)} segundos`);
     }
 
     return new Response(JSON.stringify({ response: responseText }), {

@@ -38,12 +38,19 @@
     if (!chatDisplay) return;
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
-    const avatarText = type === 'user' ? '' : type === 'transcription' ? '' : '';
+    const replayBtn = type === 'assistant'
+      ? `<button class="replay-btn" aria-label="Replay audio">&#9654;</button>`
+      : '';
     messageDiv.innerHTML = `
       <div class="content">
         <p>${text}</p>
       </div>
+      ${replayBtn}
     `;
+    if (type === 'assistant') {
+      const btn = messageDiv.querySelector('.replay-btn');
+      btn.addEventListener('click', () => replayText(text, btn));
+    }
     chatDisplay.prepend(messageDiv);
   }
 
@@ -111,8 +118,27 @@
   }
 
   async function processAudio(audioBlob) {
-    if (status) status.textContent = 'Transcribing with local Whisper...';
+    const startTime = Date.now();
+    let timerEl = null;
+    function updateTimer() {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const s = String(elapsed % 60).padStart(2, '0');
+      if (timerEl) timerEl.textContent = `${m}:${s}`;
+    }
+    const timerInterval = setInterval(updateTimer, 1000);
+    function setStatusLabel(label) {
+      if (!status) return;
+      status.innerHTML = '<span class="timer" id="process-timer">00:00</span> ' + label;
+      timerEl = document.getElementById('process-timer');
+      updateTimer();
+    }
+    function clearTimer() {
+      clearInterval(timerInterval);
+    }
 
+    // Phase 1: Whisper transcription
+    setStatusLabel('Escuchando tu audio');
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.webm');
 
@@ -124,52 +150,107 @@
 
       const data = await response.json();
 
-      if (data.transcription) {
-        addMessage('user', data.transcription);
-      }
-      if (data.response) {
-        addMessage('assistant', data.response);
-        speakText(data.response);
-      } else if (data.error) {
+      if (data.error) {
         if (status) status.textContent = data.error;
+        clearTimer();
+        return;
       }
+      if (!data.transcription) {
+        if (status) status.textContent = 'No transcription. Try again.';
+        clearTimer();
+        return;
+      }
+
+      addMessage('user', data.transcription);
+
+      // Phase 2: Model response
+      setStatusLabel('Pensando una respuesta');
+      try {
+        const chatRes = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: data.transcription, startTime }),
+        });
+        const chatData = await chatRes.json();
+        if (chatData.error) {
+          if (status) status.textContent = chatData.error;
+        } else if (chatData.response) {
+          addMessage('assistant', chatData.response);
+          speakText(chatData.response);
+        }
+      } catch (error) {
+        console.error('Error generating response:', error);
+        if (status) status.textContent = 'Error generating response.';
+      }
+      clearTimer();
     } catch (error) {
       console.error('Error processing audio:', error);
       if (status) status.textContent = 'Error processing audio. Try again.';
+      clearTimer();
     }
   }
 
-  function pickVoice() {
-    const voices = window.speechSynthesis.getVoices();
-    // US English female — prefer Google, then Microsoft
-    return voices.find(v => /google/i.test(v.name) && /en[-_]us/i.test(v.lang))
-      || voices.find(v => /female/i.test(v.name) && /en[-_]us/i.test(v.lang))
-      || voices.find(v => /en[-_]us/i.test(v.lang) && !/united kingdom|great britain|uk english/i.test(v.name))
-      || voices.find(v => /female/i.test(v.name) && /english/i.test(v.lang) && !/united kingdom|great britain/i.test(v.lang))
-      || null;
+  // Piper neural TTS: feminine voice (en_US-lessac)
+  let audioCache = new Map();
+
+  function getAudioEl(text) {
+    return new Promise((resolve, reject) => {
+      const cached = audioCache.get(text);
+      if (cached) {
+        resolve(cached);
+        return;
+      }
+      fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      })
+        .then(async (res) => {
+          if (!res.ok) throw new Error('TTS failed');
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const audioEl = new Audio(url);
+          audioCache.set(text, audioEl);
+          resolve(audioEl);
+        })
+        .catch(reject);
+    });
   }
 
   function speakText(text) {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US';
-      utterance.rate = 0.85;
-      utterance.pitch = 1;
-      utterance.onstart = () => { if (status) status.textContent = 'Speaking...'; };
-      utterance.onend = () => { if (status) status.textContent = 'Click to start recording'; };
-
-      const voice = pickVoice();
-      if (voice) utterance.voice = voice;
-
-      window.speechSynthesis.speak(utterance);
-    }
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    getAudioEl(trimmed)
+      .then((audioEl) => {
+        if (status) status.textContent = 'Speaking...';
+        audioEl.onended = () => {
+          if (status) status.textContent = 'Click to start recording';
+        };
+        return audioEl.play();
+      })
+      .catch((error) => {
+        console.error('TTS error:', error);
+        if (status) status.textContent = 'Click to start recording';
+      });
   }
 
-  // Ensure voices are loaded before first use
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.getVoices();
-    window.speechSynthesis.addEventListener('voiceschanged', () => {}, { once: true });
+  function replayText(text, btn) {
+    const trimmed = text.trim();
+    if (!trimmed) return;
+    btn.classList.add('playing');
+    getAudioEl(trimmed)
+      .then((audioEl) => {
+        if (status) status.textContent = 'Speaking...';
+        audioEl.onended = () => {
+          btn.classList.remove('playing');
+          if (status) status.textContent = 'Click to start recording';
+        };
+        return audioEl.play();
+      })
+      .catch((error) => {
+        console.error('TTS error:', error);
+        btn.classList.remove('playing');
+      });
   }
 
   recordBtn?.addEventListener('click', () => {

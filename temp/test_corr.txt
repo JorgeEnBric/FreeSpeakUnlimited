@@ -1,0 +1,13 @@
+User:
+Fix this sentence: I done understand. Provide Correction and Pattern CODE.
+
+Assistant:
+Here's the corrected sentence and the pattern code:
+
+**Corrected Sentence:**  I **don't** understand. 
+
+**Pattern Code:**
+
+* **Subject-Verb Agreement:**  "Don't" is the correct contraction for "do not," which needs to agree with the subject (I).
+* **"Don't" vs. "did not"**  The use of "don't" is a common contraction in informal English. "Did not"
+
