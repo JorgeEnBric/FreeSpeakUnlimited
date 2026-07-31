@@ -32,7 +32,24 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     </div>
   </main>
 
+  <div id="warmup-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-spinner"></div>
+      <p>Enviando el system prompt de conversación y de correcciones al cache...</p>
+    </div>
+  </div>
+
 <script>
+  // Warm up the system prompt cache on page load
+  (async () => {
+    try {
+      await fetch('/api/warmup', { method: 'POST' });
+    } finally {
+      const modal = document.getElementById('warmup-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+  })();
+
   document.getElementById('generate-corrections')?.addEventListener('click', async () => {
     const btn = document.getElementById('generate-corrections');
     const results = document.getElementById('trace-results');
@@ -95,6 +112,40 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     margin-right: 6px;
     font-size: 0.85em;
     font-family: monospace;
+  }
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    background: rgba(0,0,0,0.55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal-overlay.hidden {
+    display: none;
+  }
+  .modal-box {
+    background: #fff;
+    border-radius: 12px;
+    padding: 28px 36px;
+    max-width: 420px;
+    text-align: center;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    color: #333;
+    font-size: 0.95rem;
+  }
+  .modal-spinner {
+    width: 36px;
+    height: 36px;
+    margin: 0 auto 16px;
+    border: 4px solid rgba(0,0,0,0.12);
+    border-top-color: #6b46c1;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
   }
   .app {
     display: flex;

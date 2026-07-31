@@ -1,5 +1,6 @@
 import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
+import { CONVERSATION_SYSTEM_PROMPT as SYSTEM_PROMPT } from './prompts';
 
 const MODELS_DIR = join(process.cwd(), 'src', 'models');
 const WHISPER_BIN_DIR = join(MODELS_DIR, 'whisper-bin-x64');
@@ -46,23 +47,6 @@ function getGemmaModelPath(): string {
   }
   return candidates[0];
 }
-
-const SYSTEM_PROMPT = `You are an English teacher having a conversation with a student for speaking practice.
-
-ROLE:
-- Respond naturally in English
-- Be encouraging and patient
-- Use everyday vocabulary
-- Keep responses conversational and helpful
-
-RESPONSE GUIDELINES:
-- Be concise and to the point (max 2-3 sentences)
-- Focus on practical English usage
-- Use vocabulary suitable for intermediate learners
-- Do NOT use emojis or emoticons
-
-RESPONSE GUIDELINES (continued):
-- If the student makes grammar mistakes, gently model the correct form in your reply`;
 
 const FALLBACK_RESPONSES = [
   "That's great! Can you tell me more about that?",

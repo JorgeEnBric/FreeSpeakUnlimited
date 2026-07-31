@@ -3,6 +3,7 @@ import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { execFileSync } from 'child_process';
 import { isRunning, ensureStarted, complete } from '../../lib/llamaServer';
+import { PATTERN_LIST, CORRECTIONS_SYSTEM_PROMPT } from '../../lib/prompts';
 
 const MODELS_DIR = join(process.cwd(), 'src', 'models');
 const TEMP_DIR = join(process.cwd(), 'temp');
@@ -35,13 +36,6 @@ function getGemmaModelPath(): string {
   return candidates[0];
 }
 
-const PATTERN_LIST = [
-  'VERB_TENSE', 'PREPOSITIONS', 'AGE_EXPRESSION', 'CONNECTORS',
-  'REDUNDANCY', 'NATURAL_EXPRESSION', 'VOCABULARY_CHOICE', 'COLLOCATIONS',
-  'COMPARATIVES_SUPERLATIVES', 'COUNTABLE_UNCOUNTABLE', 'AUXILIARY_VERBS',
-  'WORD_ORDER', 'PRONOUNS', 'PLURALS', 'ARTICLES', 'OTHER'
-];
-
 export const prerender = false;
 
 export const POST: APIRoute = async () => {
@@ -66,7 +60,7 @@ export const POST: APIRoute = async () => {
       }
     }
     const sentences = subSentences.map(s => `"${s.text}"`).join('\n');
-    const systemPrompt = 'You are a strict English teacher. Rules:\n1. If a sentence mentions "yesterday", "last night", "ago", or similar past time words, the verb MUST be in past tense (e.g. "have" → "had", "talk" → "talked").\n2. Fix ALL errors: tense, word order, prepositions, articles, pronouns, collocations.\n3. Output the COMPLETE corrected sentence preserving the original meaning.\n4. Do NOT use **bold** markers in Correction or Tip.\n5. In the **Sentence:** field, copy the original text EXACTLY without any changes.\n6. Assign the most specific pattern code from this list: ' + PATTERN_LIST.join(', ');
+    const systemPrompt = CORRECTIONS_SYSTEM_PROMPT;
     const userPrompt = `Review each sentence and find ALL grammar mistakes. Fix them to produce natural, idiomatic English. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Sentence:** exact original text (copy verbatim, do NOT correct it)\n**Correction:** complete corrected sentence\n**Tip:** what was wrong and why\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
 
     let raw = '';

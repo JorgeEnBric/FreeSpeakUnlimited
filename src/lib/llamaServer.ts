@@ -1,6 +1,7 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
 import { join } from 'path';
+import { CONVERSATION_SYSTEM_PROMPT, CORRECTIONS_SYSTEM_PROMPT } from './prompts';
 
 const MODELS_DIR = join(process.cwd(), 'src', 'models');
 const LLAMA_BIN_DIR = join(MODELS_DIR, 'llama-b10182-bin-win-cpu-x64');
@@ -25,9 +26,15 @@ function getGemmaModelPath(): string {
 let serverProcess: ChildProcess | null = null;
 let starting = false;
 let startPromise: Promise<void> | null = null;
+let warmupState: 'idle' | 'running' | 'done' = 'idle';
+let warmupPromise: Promise<void> | null = null;
 
 export function isRunning(): boolean {
   return serverProcess !== null && !serverProcess.killed && serverProcess.exitCode === null;
+}
+
+export function getWarmupState(): 'idle' | 'running' | 'done' {
+  return warmupState;
 }
 
 async function waitForServer(timeoutMs = 45000): Promise<boolean> {
@@ -118,4 +125,44 @@ export async function complete(
   } catch {
     return null;
   }
+}
+
+async function primeCache(systemPrompt: string): Promise<void> {
+  try {
+    await fetch(`${BASE_URL}/v1/chat/completions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Hello' },
+        ],
+        max_tokens: 1,
+        temperature: 0.3,
+        cache_prompt: true,
+      }),
+    });
+  } catch {
+    // warmup is best-effort
+  }
+}
+
+export async function warmup(): Promise<void> {
+  if (warmupState === 'done') return;
+  if (warmupPromise) return warmupPromise;
+
+  warmupState = 'running';
+  warmupPromise = (async () => {
+    try {
+      await ensureStarted();
+      if (isRunning()) {
+        await primeCache(CONVERSATION_SYSTEM_PROMPT);
+        await primeCache(CORRECTIONS_SYSTEM_PROMPT);
+      }
+    } finally {
+      warmupState = 'done';
+    }
+  })();
+
+  await warmupPromise;
 }
