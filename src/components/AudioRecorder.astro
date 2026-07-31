@@ -111,7 +111,20 @@
   }
 
   async function processAudio(audioBlob) {
-    if (status) status.textContent = 'Transcribing with local Whisper...';
+    const startTime = Date.now();
+    let timerEl = null;
+    function updateTimer() {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const s = String(elapsed % 60).padStart(2, '0');
+      if (timerEl) timerEl.textContent = `${m}:${s}`;
+    }
+    const timerInterval = setInterval(updateTimer, 1000);
+    if (status) {
+      status.innerHTML = '<span class="timer" id="process-timer">00:00</span> Transcribing with local Whisper...';
+      timerEl = document.getElementById('process-timer');
+      updateTimer();
+    }
 
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.webm');
@@ -130,12 +143,15 @@
       if (data.response) {
         addMessage('assistant', data.response);
         speakText(data.response);
+        clearInterval(timerInterval);
       } else if (data.error) {
         if (status) status.textContent = data.error;
+        clearInterval(timerInterval);
       }
     } catch (error) {
       console.error('Error processing audio:', error);
       if (status) status.textContent = 'Error processing audio. Try again.';
+      clearInterval(timerInterval);
     }
   }
 

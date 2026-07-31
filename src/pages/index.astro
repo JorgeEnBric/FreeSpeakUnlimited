@@ -39,14 +39,21 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     if (!btn || !results) return;
     btn.disabled = true;
     btn.textContent = 'Generando...';
-    results.innerHTML = '<p class="trace-loading">Analyzing your speech...</p>';
+    results.innerHTML = '<p class="trace-loading"><span class="timer" id="corr-timer">00:00</span> Analyzing your speech...</p>';
+    const corrTimer = document.getElementById('corr-timer');
+    const corrStart = Date.now();
+    const corrInterval = setInterval(() => {
+      const e = Math.floor((Date.now() - corrStart) / 1000);
+      corrTimer.textContent = `${String(Math.floor(e/60)).padStart(2,'0')}:${String(e%60).padStart(2,'0')}`;
+    }, 1000);
+    function showResult(html) { clearInterval(corrInterval); results.innerHTML = html; }
     try {
       const res = await fetch('/api/generate-corrections', { method: 'POST' });
       const data = await res.json();
       if (data.error) {
-        results.innerHTML = `<div class="trace-error">${data.error}</div>`;
+        showResult(`<div class="trace-error">${data.error}</div>`);
       } else if (data.corrections && data.corrections.length === 0 && data.unanalyzed === 0) {
-        results.innerHTML = '<div class="trace-empty">No hay correcciones aún. Empieza a hablar primero.</div>';
+        showResult('<div class="trace-empty">No hay correcciones aún. Empieza a hablar primero.</div>');
       } else if (data.corrections && data.corrections.length > 0) {
         let html = '<div class="trace-cards">';
         for (const group of data.corrections) {
@@ -66,12 +73,12 @@ import AudioRecorder from '../components/AudioRecorder.astro';
           html += '</div>';
         }
         html += '</div>';
-        results.innerHTML = html;
+        showResult(html);
       } else if (data.unanalyzed > 0) {
-        results.innerHTML = `<div class="trace-loading">${data.unanalyzed} mensajes pendientes por analizar...</div>`;
+        showResult(`<div class="trace-loading">${data.unanalyzed} mensajes pendientes por analizar...</div>`);
       }
     } catch (e) {
-      results.innerHTML = '<p class="trace-error">Error generating corrections.</p>';
+      showResult('<p class="trace-error">Error generating corrections.</p>');
     }
     btn.disabled = false;
     btn.textContent = 'Generar Correcciones';
@@ -80,6 +87,15 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 </Layout>
 
 <style is:global>
+  .timer {
+    font-variant-numeric: tabular-nums;
+    background: rgba(0,0,0,0.08);
+    padding: 1px 6px;
+    border-radius: 4px;
+    margin-right: 6px;
+    font-size: 0.85em;
+    font-family: monospace;
+  }
   .app {
     display: flex;
     flex-direction: column;

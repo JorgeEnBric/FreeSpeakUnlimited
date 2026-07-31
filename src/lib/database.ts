@@ -125,24 +125,26 @@ export async function getCorrectionsByPattern(): Promise<{
 }[]> {
   const d = await getDb();
   const rows = d.exec(`
-    SELECT p.code, p.label, c.original, c.corrected, c.tip
+    SELECT p.code, p.label, c.original, c.corrected, c.tip, c.created_at
     FROM corrections c
     JOIN patterns p ON p.code = c.pattern_code
-    ORDER BY p.code, c.created_at DESC
+    ORDER BY c.created_at DESC
   `);
   if (!rows.length) return [];
-  const map = new Map<string, { code: string; label: string; examples: { original: string; corrected: string; tip: string }[] }>();
+  const map = new Map<string, { code: string; label: string; examples: { original: string; corrected: string; tip: string }[]; lastCreated: string }>();
   for (const r of rows[0].values) {
     const code = r[0] as string;
     const label = r[1] as string;
-    if (!map.has(code)) map.set(code, { code, label, examples: [] });
+    const createdAt = r[5] as string;
+    if (!map.has(code)) map.set(code, { code, label, examples: [], lastCreated: createdAt });
     map.get(code)!.examples.push({
       original: r[2] as string,
       corrected: r[3] as string,
       tip: r[4] as string,
     });
+    if (createdAt > map.get(code)!.lastCreated) map.get(code)!.lastCreated = createdAt;
   }
-  return Array.from(map.values());
+  return Array.from(map.values()).sort((a, b) => b.lastCreated.localeCompare(a.lastCreated));
 }
 
 export async function getUnanalyzedCount(): Promise<number> {
