@@ -2,6 +2,7 @@ import type { APIRoute } from 'astro';
 import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { execFileSync } from 'child_process';
+import { isRunning, ensureStarted, complete } from '../../lib/llamaServer';
 
 const MODELS_DIR = join(process.cwd(), 'src', 'models');
 const TEMP_DIR = join(process.cwd(), 'temp');
@@ -56,12 +57,6 @@ export const POST: APIRoute = async () => {
       });
     }
 
-    const modelPath = getGemmaModelPath();
-    const llamaCli = findLlamaCli();
-    if (!existsSync(llamaCli)) {
-      return new Response(JSON.stringify({ error: 'llama-cli.exe not found' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
-    }
-
     // Split multi-sentence messages so the model sees each sentence separately
     const subSentences: { msgId: number; text: string }[] = [];
     for (const msg of pending) {
@@ -71,33 +66,47 @@ export const POST: APIRoute = async () => {
       }
     }
     const sentences = subSentences.map(s => `"${s.text}"`).join('\n');
-    const systemPrompt = 'You are a strict English teacher. Rules:\n1. If a sentence mentions "yesterday", "last night", "ago", or similar past time words, the verb MUST be in past tense (e.g. "have" → "had", "talk" → "talked").\n2. Fix ALL errors: tense, word order, prepositions, articles, pronouns, collocations.\n3. Output the COMPLETE corrected sentence preserving the original meaning.\n4. Do NOT use **bold** markers in Correction or Tip.\n5. Assign the most specific pattern code from this list: ' + PATTERN_LIST.join(', ');
-    const userPrompt = `Review each sentence and find ALL grammar mistakes. Fix them to produce natural, idiomatic English. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Sentence:** original text\n**Correction:** complete corrected sentence\n**Tip:** what was wrong and why\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
-
-    const ts = Date.now();
-    const outFile = join(TEMP_DIR, `corr-${ts}.txt`);
-    execFileSync(llamaCli, [
-      '-m', modelPath,
-      '-sys', systemPrompt,
-      '-p', userPrompt,
-      '-o', outFile,
-      '-n', '1000',
-      '--temp', '0.3',
-      '--repeat-penalty', '1.0',
-      '--single-turn',
-      '--simple-io',
-    ], {
-      timeout: 180000,
-      cwd: getLlamaBinDir(),
-      env: { ...process.env, PATH: `${getLlamaBinDir()};${process.env.PATH}` },
-      stdio: 'pipe',
-    });
+    const systemPrompt = 'You are a strict English teacher. Rules:\n1. If a sentence mentions "yesterday", "last night", "ago", or similar past time words, the verb MUST be in past tense (e.g. "have" → "had", "talk" → "talked").\n2. Fix ALL errors: tense, word order, prepositions, articles, pronouns, collocations.\n3. Output the COMPLETE corrected sentence preserving the original meaning.\n4. Do NOT use **bold** markers in Correction or Tip.\n5. In the **Sentence:** field, copy the original text EXACTLY without any changes.\n6. Assign the most specific pattern code from this list: ' + PATTERN_LIST.join(', ');
+    const userPrompt = `Review each sentence and find ALL grammar mistakes. Fix them to produce natural, idiomatic English. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Sentence:** exact original text (copy verbatim, do NOT correct it)\n**Correction:** complete corrected sentence\n**Tip:** what was wrong and why\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
 
     let raw = '';
-    if (existsSync(outFile)) {
-      raw = readFileSync(outFile, 'utf8').trim();
+    // Try server first (persistent, keeps system prompt cached)
+    await ensureStarted();
+    if (isRunning()) {
+      const result = await complete(userPrompt, systemPrompt, { n_predict: 1000 });
+      if (result) raw = result;
     }
-    try { unlinkSync(outFile); } catch (_) {}
+
+    // Fallback to CLI
+    if (!raw) {
+      const modelPath = getGemmaModelPath();
+      const llamaCli = findLlamaCli();
+      if (!existsSync(llamaCli)) {
+        return new Response(JSON.stringify({ error: 'llama-cli.exe not found' }), { status: 200, headers: { 'Content-Type': 'application/json' } });
+      }
+      const ts = Date.now();
+      const outFile = join(TEMP_DIR, `corr-${ts}.txt`);
+      execFileSync(llamaCli, [
+        '-m', modelPath,
+        '-sys', systemPrompt,
+        '-p', userPrompt,
+        '-o', outFile,
+        '-n', '1000',
+        '--temp', '0.3',
+        '--repeat-penalty', '1.0',
+        '--single-turn',
+        '--simple-io',
+      ], {
+        timeout: 180000,
+        cwd: getLlamaBinDir(),
+        env: { ...process.env, PATH: `${getLlamaBinDir()};${process.env.PATH}` },
+        stdio: 'pipe',
+      });
+      if (existsSync(outFile)) {
+        raw = readFileSync(outFile, 'utf8').trim();
+      }
+      try { unlinkSync(outFile); } catch (_) {}
+    }
 
     await insertLog('corrections', `Raw model output:\n${raw.substring(0, 2000)}`);
 
@@ -160,8 +169,15 @@ export const POST: APIRoute = async () => {
       }
 
       if (!matchedMsg) {
-        await insertLog('corrections', `No message matched: "${sentText.substring(0,60)}"`);
-        continue;
+        // Fallback: pick the first message whose analyzed status wasn't set yet
+        const unset = pending.find(m => !analyzedIds.includes(m.id));
+        if (unset) {
+          matchedMsg = unset;
+          await insertLog('corrections', `Fallback match: id=${unset.id} for "${sentText.substring(0,60)}"`);
+        } else {
+          await insertLog('corrections', `No message matched: "${sentText.substring(0,60)}"`);
+          continue;
+        }
       }
 
       await insertLog('corrections', `msg ${matchedMsg.id} pattern=${pattern} corr="${correction.substring(0,60)}" tip="${tip.substring(0,60)}"`);
