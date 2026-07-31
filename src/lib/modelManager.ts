@@ -150,11 +150,24 @@ export async function generateResponse(prompt: string): Promise<string> {
   if (!status.gemma) {
     return FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
   }
-  if (!status.llamaCli) {
-    return 'llama-cli.exe not found. Download from https://github.com/ggerganov/llama.cpp/releases';
-  }
+
+  const MAX_CHARS = 320;
+  const truncate = (text: string) => text.length > MAX_CHARS ? text.substring(0, MAX_CHARS - 3) + '...' : text;
 
   try {
+    // Try llama-server first (persistent, keeps model in RAM)
+    const { ensureStarted, isRunning, complete } = await import('./llamaServer');
+    await ensureStarted();
+    if (isRunning()) {
+      const result = await complete(prompt, SYSTEM_PROMPT, { n_predict: 80, temperature: 0.7 });
+      if (result) return truncate(result);
+    }
+
+    // Fallback to llama-cli.exe
+    if (!status.llamaCli) {
+      return 'llama-cli.exe not found. Download from https://github.com/ggerganov/llama.cpp/releases';
+    }
+
     const { execFileSync } = await import('child_process');
     const llamaBinDir = getLlamaBinDir();
     const ts = Date.now();
@@ -193,10 +206,7 @@ export async function generateResponse(prompt: string): Promise<string> {
       response = FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
     }
 
-    const MAX_CHARS = 320;
-    return response.length > MAX_CHARS
-      ? response.substring(0, MAX_CHARS - 3) + '...'
-      : response;
+    return truncate(response);
 
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -205,9 +215,28 @@ export async function generateResponse(prompt: string): Promise<string> {
   }
 }
 
+function fmtDateTime(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 export async function processAudio(audioPath: string): Promise<{ transcription: string; response: string }> {
+  const start = Date.now();
+
+  const t0 = Date.now();
   const transcription = await transcribeAudio(audioPath);
+  const whisperMs = Date.now() - t0;
+
+  const t1 = Date.now();
   const response = await generateResponse(transcription);
+  const modelMs = Date.now() - t1;
+
+  const totalMs = Date.now() - start;
+  console.log(`Hora inicio: ${fmtDateTime(new Date(start))}`);
+  console.log(`Hora fin: ${fmtDateTime(new Date())}`);
+  console.log(`Tiempo en Whisper: ${Math.round(whisperMs / 1000)} segundos`);
+  console.log(`Tiempo en modelo IA: ${Math.round(modelMs / 1000)} segundos`);
+  console.log(`Tiempo total: ${Math.round(totalMs / 1000)} segundos`);
 
   // Store in database for later analysis
   const { initDB, insertMessage } = await import('./database');
