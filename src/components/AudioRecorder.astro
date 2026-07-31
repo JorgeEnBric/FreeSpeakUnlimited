@@ -120,12 +120,18 @@
       if (timerEl) timerEl.textContent = `${m}:${s}`;
     }
     const timerInterval = setInterval(updateTimer, 1000);
-    if (status) {
-      status.innerHTML = '<span class="timer" id="process-timer">00:00</span> Transcribing with local Whisper...';
+    function setStatusLabel(label) {
+      if (!status) return;
+      status.innerHTML = '<span class="timer" id="process-timer">00:00</span> ' + label;
       timerEl = document.getElementById('process-timer');
       updateTimer();
     }
+    function clearTimer() {
+      clearInterval(timerInterval);
+    }
 
+    // Phase 1: Whisper transcription
+    setStatusLabel('Escuchando tu audio');
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.webm');
 
@@ -137,21 +143,43 @@
 
       const data = await response.json();
 
-      if (data.transcription) {
-        addMessage('user', data.transcription);
-      }
-      if (data.response) {
-        addMessage('assistant', data.response);
-        speakText(data.response);
-        clearInterval(timerInterval);
-      } else if (data.error) {
+      if (data.error) {
         if (status) status.textContent = data.error;
-        clearInterval(timerInterval);
+        clearTimer();
+        return;
       }
+      if (!data.transcription) {
+        if (status) status.textContent = 'No transcription. Try again.';
+        clearTimer();
+        return;
+      }
+
+      addMessage('user', data.transcription);
+
+      // Phase 2: Model response
+      setStatusLabel('Pensando una respuesta');
+      try {
+        const chatRes = await fetch('/api/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: data.transcription, startTime }),
+        });
+        const chatData = await chatRes.json();
+        if (chatData.error) {
+          if (status) status.textContent = chatData.error;
+        } else if (chatData.response) {
+          addMessage('assistant', chatData.response);
+          speakText(chatData.response);
+        }
+      } catch (error) {
+        console.error('Error generating response:', error);
+        if (status) status.textContent = 'Error generating response.';
+      }
+      clearTimer();
     } catch (error) {
       console.error('Error processing audio:', error);
       if (status) status.textContent = 'Error processing audio. Try again.';
-      clearInterval(timerInterval);
+      clearTimer();
     }
   }
 
