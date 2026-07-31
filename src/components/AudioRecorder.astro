@@ -183,37 +183,51 @@
     }
   }
 
-  function pickVoice() {
-    const voices = window.speechSynthesis.getVoices();
-    // US English female — prefer Google, then Microsoft
-    return voices.find(v => /google/i.test(v.name) && /en[-_]us/i.test(v.lang))
-      || voices.find(v => /female/i.test(v.name) && /en[-_]us/i.test(v.lang))
-      || voices.find(v => /en[-_]us/i.test(v.lang) && !/united kingdom|great britain|uk english/i.test(v.name))
-      || voices.find(v => /female/i.test(v.name) && /english/i.test(v.lang) && !/united kingdom|great britain/i.test(v.lang))
-      || null;
-  }
+  // Piper neural TTS: feminine voice (en_US-lessac)
+  let audioCache = new Map();
+  let isSpeaking = false;
 
   function speakText(text) {
-    if ('speechSynthesis' in window) {
-      window.speechSynthesis.cancel();
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.lang = 'en-US';
-      utterance.rate = 0.85;
-      utterance.pitch = 1;
-      utterance.onstart = () => { if (status) status.textContent = 'Speaking...'; };
-      utterance.onend = () => { if (status) status.textContent = 'Click to start recording'; };
+    if (isSpeaking) return;
+    const trimmed = text.trim();
+    if (!trimmed) return;
 
-      const voice = pickVoice();
-      if (voice) utterance.voice = voice;
+    const playAudio = (audioEl) => {
+      isSpeaking = true;
+      if (status) status.textContent = 'Speaking...';
+      audioEl.onended = () => {
+        isSpeaking = false;
+        if (status) status.textContent = 'Click to start recording';
+      };
+      audioEl.play().catch(() => {
+        isSpeaking = false;
+        if (status) status.textContent = 'Click to start recording';
+      });
+    };
 
-      window.speechSynthesis.speak(utterance);
+    const cached = audioCache.get(trimmed);
+    if (cached) {
+      playAudio(cached);
+      return;
     }
-  }
 
-  // Ensure voices are loaded before first use
-  if ('speechSynthesis' in window) {
-    window.speechSynthesis.getVoices();
-    window.speechSynthesis.addEventListener('voiceschanged', () => {}, { once: true });
+    fetch('/api/tts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: trimmed }),
+    })
+      .then(async (res) => {
+        if (!res.ok) throw new Error('TTS failed');
+        const blob = await res.blob();
+        const url = URL.createObjectURL(blob);
+        const audioEl = new Audio(url);
+        audioCache.set(trimmed, audioEl);
+        playAudio(audioEl);
+      })
+      .catch((error) => {
+        console.error('TTS error:', error);
+        if (status) status.textContent = 'Click to start recording';
+      });
   }
 
   recordBtn?.addEventListener('click', () => {
