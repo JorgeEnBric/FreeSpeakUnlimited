@@ -27,16 +27,27 @@ let starting = false;
 let startPromise: Promise<void> | null = null;
 
 export function isRunning(): boolean {
-  return serverProcess !== null && !serverProcess.killed;
+  return serverProcess !== null && !serverProcess.killed && serverProcess.exitCode === null;
+}
+
+async function waitForServer(timeoutMs = 45000): Promise<boolean> {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    try {
+      const res = await fetch(`${BASE_URL}/health`, { signal: AbortSignal.timeout(3000) });
+      if (res.ok) return true;
+    } catch { /* not ready yet */ }
+    await new Promise(r => setTimeout(r, 1000));
+  }
+  return false;
 }
 
 export function ensureStarted(): Promise<void> {
   if (isRunning()) return Promise.resolve();
-  if (startPromise) return startPromise;
-  if (starting) return startPromise!;
+  if (starting && startPromise) return startPromise;
 
   starting = true;
-  startPromise = new Promise((resolve) => {
+  startPromise = new Promise(async (resolve) => {
     const modelPath = getGemmaModelPath();
     if (!existsSync(SERVER_EXE)) {
       console.warn('[llama-server] exe not found');
@@ -59,21 +70,13 @@ export function ensureStarted(): Promise<void> {
       env: { ...process.env, PATH: `${LLAMA_BIN_DIR};${process.env.PATH}` },
     });
 
-    const onReady = (d: Buffer) => {
-      const text = d.toString();
-      if (text.includes('model loaded') || text.includes('listening') || text.includes('starting')) {
-        starting = false;
-        resolve();
-      }
-    };
+    serverProcess.on('error', () => { serverProcess = null; });
+    serverProcess.on('exit', () => { serverProcess = null; starting = false; startPromise = null; });
 
-    serverProcess.stdout?.on('data', onReady);
-    serverProcess.stderr?.on('data', onReady);
-
-    serverProcess.on('error', () => { serverProcess = null; starting = false; resolve(); });
-    serverProcess.on('exit', () => { serverProcess = null; starting = false; });
-
-    setTimeout(() => { starting = false; resolve(); }, 30000);
+    const ready = await waitForServer(45000);
+    if (!ready) { serverProcess = null; }
+    starting = false;
+    resolve();
   });
 
   return startPromise;
@@ -84,6 +87,8 @@ export function stop(): void {
     serverProcess.kill('SIGTERM');
     serverProcess = null;
   }
+  starting = false;
+  startPromise = null;
 }
 
 export async function complete(
