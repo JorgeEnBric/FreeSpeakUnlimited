@@ -25,6 +25,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       <aside class="trace-panel">
         <h3>Trace de Correcciones</h3>
         <button id="generate-corrections" class="trace-btn">Generar Correcciones</button>
+        <button id="clear-record" class="clear-btn">Limpiar registro</button>
         <div id="trace-results" class="trace-results">
           <p class="trace-empty">Presiona el botón para generar correcciones de tu conversación</p>
         </div>
@@ -99,6 +100,31 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
     btn.disabled = false;
     btn.textContent = 'Generar Correcciones';
+  });
+
+  document.getElementById('clear-record')?.addEventListener('click', async () => {
+    const btn = document.getElementById('clear-record');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = 'Limpiando...';
+    try {
+      const res = await fetch('/api/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await res.json();
+      if (data.error) {
+        alert(`Error: ${data.error}`);
+      } else {
+        const results = document.getElementById('trace-results');
+        if (results) results.innerHTML = '<p class="trace-empty">Correcciones limpiadas.</p>';
+      }
+    } catch (e) {
+      alert('Error al limpiar el registro.');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Limpiar registro';
   });
 </script>
 </Layout>
@@ -253,6 +279,27 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     opacity: 0.5;
     cursor: not-allowed;
     transform: none;
+  }
+
+  .clear-btn {
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--recording, #dc2626);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--recording, #dc2626);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .clear-btn:hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.1);
+  }
+
+  .clear-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
   }
 
   .trace-results {

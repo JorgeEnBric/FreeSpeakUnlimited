@@ -154,6 +154,13 @@ export async function getUnanalyzedCount(): Promise<number> {
   return rows[0].values[0][0] as number;
 }
 
+export async function clearAll(): Promise<void> {
+  const d = await getDb();
+  d.run('DELETE FROM corrections');
+  d.run('DELETE FROM logs');
+  save();
+}
+
 function save(): void {
   const data = db.export();
   writeFileSync(DB_PATH, Buffer.from(data));
