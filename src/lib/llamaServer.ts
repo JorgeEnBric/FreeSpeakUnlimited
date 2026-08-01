@@ -127,6 +127,64 @@ export async function complete(
   }
 }
 
+export async function* completeStream(
+  prompt: string,
+  systemPrompt: string,
+  options?: { n_predict?: number; temperature?: number; repeat_penalty?: number }
+): AsyncGenerator<string, void, unknown> {
+  if (!isRunning()) return;
+
+  const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt },
+      ],
+      max_tokens: options?.n_predict ?? 1000,
+      temperature: options?.temperature ?? 0.3,
+      repeat_penalty: options?.repeat_penalty ?? 1.0,
+      stream: true,
+    }),
+  });
+  if (!res.ok || !res.body) return;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = '';
+
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      const lines = buffer.split('\n');
+      buffer = lines.pop() ?? '';
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data:')) continue;
+        const payload = trimmed.slice(5).trim();
+        if (payload === '[DONE]') return;
+
+        try {
+          const json = JSON.parse(payload) as {
+            choices?: { delta?: { content?: string } }[];
+          };
+          const content = json.choices?.[0]?.delta?.content;
+          if (content) yield content;
+        } catch {
+          // ignore malformed chunks
+        }
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+}
+
 async function primeCache(systemPrompt: string): Promise<void> {
   try {
     await fetch(`${BASE_URL}/v1/chat/completions`, {

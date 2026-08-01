@@ -34,8 +34,8 @@
   const chatDisplay = document.getElementById('chat');
 
 
-  function addMessage(type, text) {
-    if (!chatDisplay) return;
+  function addMessage(type, text, empty = false) {
+    if (!chatDisplay) return null;
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
     const replayBtn = type === 'assistant'
@@ -43,15 +43,20 @@
       : '';
     messageDiv.innerHTML = `
       <div class="content">
-        <p>${text}</p>
+        <p>${empty ? '' : text}</p>
       </div>
       ${replayBtn}
     `;
     if (type === 'assistant') {
       const btn = messageDiv.querySelector('.replay-btn');
-      btn.addEventListener('click', () => replayText(text, btn));
+      btn.addEventListener('click', () => {
+        const p = messageDiv.querySelector('p');
+        const t = p ? p.textContent : text;
+        if (t) replayText(t, btn);
+      });
     }
     chatDisplay.prepend(messageDiv);
+    return messageDiv;
   }
 
   async function startRecording() {
@@ -163,7 +168,7 @@
 
       addMessage('user', data.transcription);
 
-      // Phase 2: Model response
+      // Phase 2: Model response (streaming)
       setStatusLabel('Pensando una respuesta');
       try {
         const chatRes = await fetch('/api/chat', {
@@ -171,12 +176,46 @@
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: data.transcription, startTime }),
         });
-        const chatData = await chatRes.json();
-        if (chatData.error) {
-          if (status) status.textContent = chatData.error;
-        } else if (chatData.response) {
-          addMessage('assistant', chatData.response);
-          speakText(chatData.response);
+
+        const contentType = chatRes.headers.get('content-type') || '';
+        let fullResponse = '';
+
+        if (contentType.includes('application/json')) {
+          const chatData = await chatRes.json();
+          if (chatData.error) {
+            if (status) status.textContent = chatData.error;
+          } else if (chatData.response) {
+            fullResponse = chatData.response;
+          }
+        } else if (chatRes.body) {
+          const msgEl = addMessage('assistant', '', true);
+          const reader = chatRes.body.getReader();
+          const decoder = new TextDecoder();
+          let buffer = '';
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split('\n');
+            buffer = lines.pop() ?? '';
+            for (const line of lines) {
+              if (!line.trim()) continue;
+              try {
+                const parsed = JSON.parse(line);
+                if (parsed.error) {
+                  if (status) status.textContent = parsed.error;
+                } else if (parsed.chunk) {
+                  fullResponse += parsed.chunk;
+                  const p = msgEl.querySelector('p');
+                  if (p) p.textContent = fullResponse;
+                }
+              } catch { /* partial line */ }
+            }
+          }
+        }
+
+        if (fullResponse) {
+          speakText(fullResponse);
         }
       } catch (error) {
         console.error('Error generating response:', error);

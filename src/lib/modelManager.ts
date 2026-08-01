@@ -130,7 +130,6 @@ export async function transcribeAudio(audioPath: string): Promise<string> {
 export async function generateResponse(prompt: string): Promise<string> {
   const modelPath = getGemmaModelPath();
   const status = checkModels();
-
   if (!status.gemma) {
     return FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
   }
@@ -196,6 +195,42 @@ export async function generateResponse(prompt: string): Promise<string> {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('Gemma inference error:', msg);
     return `Gemma error: ${msg}`;
+  }
+}
+
+// Streaming version: yields response text chunks as they are generated.
+// Falls back to generateResponse() when llama-server is unavailable.
+export async function* generateResponseStream(
+  prompt: string
+): AsyncGenerator<string, void, unknown> {
+  const status = checkModels();
+
+  if (!status.gemma) {
+    yield FALLBACK_RESPONSES[Math.floor(Math.random() * FALLBACK_RESPONSES.length)];
+    return;
+  }
+
+  try {
+    const { ensureStarted, isRunning, completeStream } = await import('./llamaServer');
+    await ensureStarted();
+    if (isRunning()) {
+      let hadChunks = false;
+      for await (const chunk of completeStream(prompt, SYSTEM_PROMPT, {
+        n_predict: 70,
+        temperature: 0.7,
+      })) {
+        hadChunks = true;
+        yield chunk;
+      }
+      if (hadChunks) return;
+    }
+
+    // Fallback: non-streaming path
+    const full = await generateResponse(prompt);
+    yield full;
+  } catch (error) {
+    console.error('Gemma stream error:', error);
+    yield `Gemma error: ${error instanceof Error ? error.message : 'Unknown error'}`;
   }
 }
 
