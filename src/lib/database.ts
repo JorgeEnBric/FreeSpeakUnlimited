@@ -47,6 +47,12 @@ export async function initDB(): Promise<void> {
     message TEXT NOT NULL,
     created_at TEXT DEFAULT (datetime('now'))
   )`);
+  d.run(`CREATE TABLE IF NOT EXISTS new_expressions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    expression TEXT NOT NULL,
+    context TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`);
   d.run(`INSERT OR IGNORE INTO patterns VALUES
     ('VERB_TENSE', 'Verb Tense', 'Incorrect use of verb tenses'),
     ('PREPOSITIONS', 'Prepositions', 'Incorrect use of prepositions'),
@@ -71,6 +77,31 @@ export async function initDB(): Promise<void> {
 export async function insertLog(source: string, message: string): Promise<void> {
   const d = await getDb();
   d.run('INSERT INTO logs (source, message) VALUES (?, ?)', [source, message]);
+  save();
+}
+
+export async function insertExpression(expression: string, context?: string): Promise<number> {
+  const d = await getDb();
+  d.run('INSERT INTO new_expressions (expression, context) VALUES (?, ?)', [expression, context ?? null]);
+  save();
+  return (d.exec('SELECT last_insert_rowid()') as any)[0]?.values?.[0]?.[0] as number;
+}
+
+export async function getExpressions(): Promise<{ id: number; expression: string; context: string | null; created_at: string }[]> {
+  const d = await getDb();
+  const rows = d.exec('SELECT id, expression, context, created_at FROM new_expressions ORDER BY id DESC');
+  if (!rows.length) return [];
+  return rows[0].values.map((r: any) => ({
+    id: r[0],
+    expression: r[1],
+    context: r[2],
+    created_at: r[3],
+  }));
+}
+
+export async function deleteExpression(id: number): Promise<void> {
+  const d = await getDb();
+  d.run('DELETE FROM new_expressions WHERE id = ?', [id]);
   save();
 }
 
