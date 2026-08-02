@@ -4,11 +4,11 @@ import ChatDisplay from '../components/ChatDisplay.astro';
 import AudioRecorder from '../components/AudioRecorder.astro';
 ---
 
-<Layout title="FreeSpeak - Practice Speaking">
+<Layout title="FreeSpeak Unlimited">
   <main class="app">
     <header class="header">
-      <h1>FreeSpeak</h1>
-      <p class="subtitle">Practice speaking English with AI</p>
+      <h1>FreeSpeak Unlimited</h1>
+      <p class="subtitle">Practice speaking English without limits</p>
     </header>
 
     <div class="main-content">
@@ -33,7 +33,6 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 
       <aside class="pomodoro-panel">
         <h3>Pomodoro</h3>
-        <div class="pomodoro-mode" id="pomodoro-mode">Trabajo</div>
         <div class="pomodoro-time" id="pomodoro-time">25:00</div>
         <div class="pomodoro-controls">
           <button id="pomodoro-toggle" class="pomodoro-btn">Iniciar</button>
@@ -42,7 +41,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 
         <div class="panel-divider"></div>
 
-        <h3>Nuevas Expresiones</h3>
+        <h3 class="expressions-title">Nuevas Expresiones</h3>
         <p class="expressions-hint">Selecciona una frase en el chat y haz clic derecho para guardarla aquí</p>
         <div id="expressions-list" class="expressions-list">
           <p class="expressions-empty">Aún no hay expresiones guardadas</p>
@@ -153,17 +152,53 @@ import AudioRecorder from '../components/AudioRecorder.astro';
   (() => {
     const WORK_MIN = 25;
     const BREAK_MIN = 5;
-    const modeEl = document.getElementById('pomodoro-mode');
     const timeEl = document.getElementById('pomodoro-time');
     const toggleBtn = document.getElementById('pomodoro-toggle');
     const resetBtn = document.getElementById('pomodoro-reset');
-    if (!modeEl || !timeEl || !toggleBtn || !resetBtn) return;
+    if (!timeEl || !toggleBtn || !resetBtn) return;
 
     let mode = 'work';
     let remaining = WORK_MIN * 60;
     let running = false;
     let intervalId = null;
     let endTime = 0;
+    let ringCtx = null;
+
+    function ensureRingCtx() {
+      if (!ringCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        ringCtx = new Ctx();
+      }
+      if (ringCtx.state === 'suspended') ringCtx.resume();
+      return ringCtx;
+    }
+
+    function playRing() {
+      try {
+        if (!ringCtx) return;
+        const ctx = ringCtx;
+        const now = ctx.currentTime;
+        const notes = [880, 880, 880, 660];
+        const step = 0.3;
+        const dur = 0.22;
+        notes.forEach((freq, i) => {
+          const start = now + i * step;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + dur + 0.05);
+        });
+      } catch (e) {
+        console.error('Ring sound error:', e);
+      }
+    }
 
     function fmt(totalSeconds) {
       const s = Math.max(0, Math.ceil(totalSeconds));
@@ -172,9 +207,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 
     function render() {
       timeEl.textContent = fmt(remaining);
-      modeEl.textContent = mode === 'work' ? 'Trabajo' : 'Descanso';
-      modeEl.className = 'pomodoro-mode ' + (mode === 'work' ? 'work' : 'break');
-      toggleBtn.textContent = running ? 'Pausar' : 'Continuar';
+      toggleBtn.textContent = running ? 'Pausar' : 'Iniciar';
       toggleBtn.classList.toggle('hidden', remaining === 0);
       resetBtn.textContent = (mode === 'work' && remaining === WORK_MIN * 60 && !running) ? 'Reiniciar' : 'Reiniciar';
     }
@@ -190,6 +223,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
 
     function switchMode() {
+      playRing();
       mode = mode === 'work' ? 'break' : 'work';
       remaining = (mode === 'work' ? WORK_MIN : BREAK_MIN) * 60;
       if (toggleBtn) toggleBtn.textContent = 'Iniciar';
@@ -222,6 +256,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
 
     toggleBtn.addEventListener('click', () => {
+      ensureRingCtx();
       if (running) pauseTimer();
       else startTimer();
     });
@@ -620,23 +655,8 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     font-size: 1.1rem;
   }
 
-  .pomodoro-mode {
-    font-size: 0.8rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    padding: 0.25rem 0.75rem;
-    border-radius: 999px;
-  }
-
-  .pomodoro-mode.work {
-    color: #86efac;
-    background: rgba(74, 222, 128, 0.12);
-  }
-
-  .pomodoro-mode.break {
-    color: #93c5fd;
-    background: rgba(59, 130, 246, 0.12);
+  .pomodoro-panel h3.expressions-title::before {
+    content: '✨';
   }
 
   .pomodoro-time {

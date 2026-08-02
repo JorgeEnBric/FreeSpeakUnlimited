@@ -45,7 +45,9 @@
     const replayBtn = type === 'assistant'
       ? `<button class="replay-btn" aria-label="Replay audio">&#9654;</button>`
       : '';
+    const avatar = type === 'assistant' ? `<div class="avatar">AI</div>` : '';
     messageDiv.innerHTML = `
+      ${avatar}
       <div class="content">
         <p>${empty ? '' : text}</p>
       </div>
