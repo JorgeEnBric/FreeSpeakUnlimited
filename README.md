@@ -39,7 +39,7 @@ npm install
 
 ### 3. Extract the models
 
-Place `models.zip` in the **project root** and extract it so the files land in `src/models/` (not `src/models/models/`).
+Download models.zip from Release v1.0.0 and extract its contents into the src/ directory at the project root.
 
 ```bash
 # PowerShell
