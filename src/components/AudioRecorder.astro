@@ -339,6 +339,7 @@
   }
 
   recordBtn?.addEventListener('click', () => {
+    initAudioCtx();
     if (isRecording) stopRecording();
     else startRecording();
   });
