@@ -25,6 +25,10 @@
   let audioChunks = [];
   let isRecording = false;
   let isCancelled = false;
+  let audioCtx = null;
+  let nextPlayTime = 0;
+  let activeSources = [];
+  let currentChatAbort = null;
 
   const recordBtn = document.getElementById('record-btn');
   const cancelBtn = document.getElementById('cancel-btn');
@@ -34,28 +38,36 @@
   const chatDisplay = document.getElementById('chat');
 
 
-  function addMessage(type, text) {
-    if (!chatDisplay) return;
+  function addMessage(type, text, empty = false) {
+    if (!chatDisplay) return null;
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${type}`;
     const replayBtn = type === 'assistant'
       ? `<button class="replay-btn" aria-label="Replay audio">&#9654;</button>`
       : '';
+    const avatar = type === 'assistant' ? `<div class="avatar">AI</div>` : '';
     messageDiv.innerHTML = `
+      ${avatar}
       <div class="content">
-        <p>${text}</p>
+        <p>${empty ? '' : text}</p>
       </div>
       ${replayBtn}
     `;
     if (type === 'assistant') {
       const btn = messageDiv.querySelector('.replay-btn');
-      btn.addEventListener('click', () => replayText(text, btn));
+      btn.addEventListener('click', () => {
+        const p = messageDiv.querySelector('p');
+        const t = p ? p.textContent : text;
+        if (t) replayText(t, btn);
+      });
     }
     chatDisplay.prepend(messageDiv);
+    return messageDiv;
   }
 
   async function startRecording() {
     try {
+      stopAudioPlayback();
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunks = [];
       mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
@@ -163,24 +175,61 @@
 
       addMessage('user', data.transcription);
 
-      // Phase 2: Model response
+      // Phase 2: Model response (streaming TTS)
       setStatusLabel('Pensando una respuesta');
       try {
-        const chatRes = await fetch('/api/chat', {
+        resetAudioPlayback();
+        currentChatAbort = new AbortController();
+        const chatRes = await fetch('/api/chat-tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: data.transcription, startTime }),
+          signal: currentChatAbort.signal,
         });
-        const chatData = await chatRes.json();
-        if (chatData.error) {
-          if (status) status.textContent = chatData.error;
-        } else if (chatData.response) {
-          addMessage('assistant', chatData.response);
-          speakText(chatData.response);
+
+        if (!chatRes.body) {
+          if (status) status.textContent = 'No response received.';
+          clearTimer();
+          return;
         }
+
+        const msgEl = addMessage('assistant', '', true);
+        const reader = chatRes.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullResponse = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.error) {
+                if (status) status.textContent = parsed.error;
+              } else if (parsed.chunk) {
+                fullResponse += parsed.chunk;
+                const p = msgEl.querySelector('p');
+                if (p) p.textContent = fullResponse;
+              } else if (parsed.audio) {
+                playPcmChunk(parsed.audio);
+              }
+            } catch { /* partial line */ }
+          }
+        }
+
+        currentChatAbort = null;
+        if (fullResponse && status) status.textContent = 'Click to start recording';
       } catch (error) {
-        console.error('Error generating response:', error);
-        if (status) status.textContent = 'Error generating response.';
+        if (error && error.name === 'AbortError') {
+          if (status) status.textContent = 'Click to start recording';
+        } else {
+          console.error('Error generating response:', error);
+          if (status) status.textContent = 'Error generating response.';
+        }
       }
       clearTimer();
     } catch (error) {
@@ -217,21 +266,59 @@
     });
   }
 
-  function speakText(text) {
-    const trimmed = text.trim();
-    if (!trimmed) return;
-    getAudioEl(trimmed)
-      .then((audioEl) => {
-        if (status) status.textContent = 'Speaking...';
-        audioEl.onended = () => {
-          if (status) status.textContent = 'Click to start recording';
-        };
-        return audioEl.play();
-      })
-      .catch((error) => {
-        console.error('TTS error:', error);
-        if (status) status.textContent = 'Click to start recording';
-      });
+  function initAudioCtx() {
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new Ctx();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function resetAudioPlayback() {
+    nextPlayTime = 0;
+    activeSources = [];
+  }
+
+  function stopAudioPlayback() {
+    if (currentChatAbort) {
+      currentChatAbort.abort();
+      currentChatAbort = null;
+    }
+    for (const src of activeSources) {
+      try { src.stop(); } catch { /* already stopped */ }
+    }
+    activeSources = [];
+    nextPlayTime = 0;
+  }
+
+  function playPcmChunk(b64) {
+    try {
+      const ctx = initAudioCtx();
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const int16 = new Int16Array(bytes.buffer);
+      const float32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+      const buffer = ctx.createBuffer(1, float32.length, 22050);
+      buffer.copyToChannel(float32, 0);
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      const now = ctx.currentTime;
+      if (nextPlayTime < now) nextPlayTime = now + 0.02;
+      src.start(nextPlayTime);
+      nextPlayTime += buffer.duration;
+      activeSources.push(src);
+      src.onended = () => {
+        const idx = activeSources.indexOf(src);
+        if (idx !== -1) activeSources.splice(idx, 1);
+      };
+      if (status) status.textContent = 'Speaking...';
+    } catch (error) {
+      console.error('Audio playback error:', error);
+    }
   }
 
   function replayText(text, btn) {
@@ -254,6 +341,7 @@
   }
 
   recordBtn?.addEventListener('click', () => {
+    initAudioCtx();
     if (isRecording) stopRecording();
     else startRecording();
   });

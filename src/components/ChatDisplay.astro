@@ -34,6 +34,24 @@ const { id } = Astro.props;
     justify-content: flex-end;
   }
 
+  .avatar {
+    flex-shrink: 0;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: white;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-right: 0.5rem;
+    margin-top: 0.2rem;
+    user-select: none;
+  }
+
   .content {
     background: var(--surface-light);
     padding: 0.7rem 1rem;

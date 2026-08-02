@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { checkModels, generateResponse } from '../../lib/modelManager';
+import { checkModels, generateResponseStream } from '../../lib/modelManager';
 
 export const prerender = false;
 
@@ -19,11 +19,8 @@ export const POST: APIRoute = async ({ request }) => {
     const modelStatus = checkModels();
 
     const t0 = Date.now();
-    let responseText: string;
 
-    if (modelStatus.gemma) {
-      responseText = await generateResponse(text);
-    } else {
+    if (!modelStatus.gemma) {
       const responses = [
         "That's great! Can you tell me more about that?",
         "I hear you! Let's practice another sentence together.",
@@ -31,18 +28,43 @@ export const POST: APIRoute = async ({ request }) => {
         "Interesting point! How would you say that in a different way?",
         "Excellent! You're making great progress with your English."
       ];
-      responseText = responses[Math.floor(Math.random() * responses.length)];
+      const responseText = responses[Math.floor(Math.random() * responses.length)];
+      return new Response(JSON.stringify({ response: responseText }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
     }
 
-    const modelMs = Date.now() - t0;
-    console.log(`Tiempo en modelo IA: ${Math.round(modelMs / 1000)} segundos`);
-    if (startTime) {
-      console.log(`Tiempo total: ${Math.round((Date.now() - startTime) / 1000)} segundos`);
-    }
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        try {
+          for await (const chunk of generateResponseStream(text)) {
+            controller.enqueue(encoder.encode(JSON.stringify({ chunk }) + '\n'));
+          }
+          controller.enqueue(encoder.encode(JSON.stringify({ done: true }) + '\n'));
+        } catch (error) {
+          controller.enqueue(encoder.encode(JSON.stringify({
+            error: error instanceof Error ? error.message : 'Stream error',
+          }) + '\n'));
+        } finally {
+          const modelMs = Date.now() - t0;
+          console.log(`Tiempo en modelo IA: ${Math.round(modelMs / 1000)} segundos`);
+          if (startTime) {
+            console.log(`Tiempo total: ${Math.round((Date.now() - startTime) / 1000)} segundos`);
+          }
+          controller.close();
+        }
+      },
+    });
 
-    return new Response(JSON.stringify({ response: responseText }), {
+    return new Response(stream, {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/x-ndjson',
+        'Cache-Control': 'no-cache',
+        'Connection': 'keep-alive',
+      },
     });
 
   } catch (error) {

@@ -1,130 +1,110 @@
-# Plan: Migrar a base de datos local con análisis incremental
+# Plan: Pronunciar tokens del modelo en streaming (sin esperar el texto completo)
 
-## Stack
-- **Base de datos**: SQLite vía `sql.js` (WASM, sin binarios nativos)
-- **Runtime**: Node.js (lado servidor Astro)
-- **Dependencia**: `npm install sql.js`
+## 1. Contexto actual
 
-## Esquema de base de datos
+Flujo actual en `src/components/AudioRecorder.astro`:
 
-```sql
--- Intervenciones del usuario (transcripciones)
-CREATE TABLE messages (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  text TEXT NOT NULL,                     -- transcripción del audio
-  created_at TEXT DEFAULT (datetime('now')),
-  analyzed INTEGER DEFAULT 0             -- 0 = pendiente, 1 = ya corregido
-);
+1. El usuario graba audio → `POST /api/process-audio` → **Whisper** transcribe.
+2. El cliente envía la transcripción a `POST /api/chat` → **Gemma** (vía `llama-server`, `src/lib/llamaServer.ts:completeStream`) devuelve tokens como NDJSON.
+3. El cliente acumula TODOS los tokens en `fullResponse` y solo al terminar el stream llama `speakText(fullResponse)`.
+4. `speakText` hace `POST /api/tts` → **Piper** sintetiza el WAV completo → `audio.play()`.
 
--- Correcciones generadas por el modelo
-CREATE TABLE corrections (
-  id INTEGER PRIMARY KEY AUTOINCREMENT,
-  message_id INTEGER NOT NULL,           -- FK → messages.id
-  original TEXT NOT NULL,                 -- fragmento original con error
-  corrected TEXT,                         -- versión corregida
-  tip TEXT,                               -- explicación / tip gramatical
-  pattern_code TEXT NOT NULL,             -- clasificación del error
-  created_at TEXT DEFAULT (datetime('now')),
-  FOREIGN KEY (message_id) REFERENCES messages(id)
-);
+### Problema
+El usuario espera **dos veces**: primero que el modelo termine de generar (~70 tokens en CPU, varios segundos) y luego que Piper sintetice el texto completo. No se pronuncia nada hasta el final.
 
--- Patrones de corrección (catálogo)
-CREATE TABLE patterns (
-  code TEXT PRIMARY KEY,                  -- ej. VERB_TENSE
-  label TEXT NOT NULL,                    -- ej. "Verb Tense"
-  description TEXT                        -- ej. "Incorrect use of verb tenses"
-);
-```
+### Aclaración de términos
+- **Whisper** = reconocimiento de voz (audio → texto), `src/lib/modelManager.ts:transcribeAudio`.
+- **Piper** = el que pronuncia (texto → audio), `src/pages/api/tts.ts`.
+- Para "pronunciar tokens conforme llegan" el destino es **Piper**, no Whisper. El plan aplica a Piper.
 
-## Patrones de clasificación (`pattern_code`)
+## 2. Objetivo
 
-| Código | Descripción |
-|--------|-------------|
-| VERB_TENSE | Tiempos verbales incorrectos |
-| PREPOSITIONS | Uso incorrecto de preposiciones |
-| AGE_EXPRESSION | Expresiones de edad/cantidad |
-| CONNECTORS | Conectores y transiciones |
-| REDUNDANCY | Redundancia o repetición |
-| NATURAL_EXPRESSION | Expresión poco natural |
-| VOCABULARY_CHOICE | Elección de vocabulario |
-| COLLOCATIONS | Colocaciones incorrectas |
-| COMPARATIVES_SUPERLATIVES | Comparativos y superlativos |
-| COUNTABLE_UNCOUNTABLE | Contables/incontables |
-| AUXILIARY_VERBS | Verbos auxiliares |
-| WORD_ORDER | Orden de palabras |
-| PRONOUNS | Pronombres |
-| PLURALS | Plurales |
-| ARTICLES | Artículos (a/an/the) |
-| OTHER | Otros (fallback) |
+Que el audio empiece a sonar con las **primeras oraciones** mientras el modelo sigue generando, en lugar de esperar el texto completo.
 
-## Flujo
+## 3. Granularidad recomendada
 
-### 1. Transcripción de audio (`processAudio`)
-```
-audio → Whisper → transcripción
-  → INSERT INTO messages (text, analyzed=0)
-  → responder al cliente
-```
+Pronunciar **token a token no tiene sentido** (un token suele ser parte de una palabra). La granularidad correcta es **oración / grupo de pensamiento**:
 
-### 2. Generar correcciones (botón "Generar Correcciones")
-```
-  → SELECT id, text FROM messages WHERE analyzed=0
-  → si no hay pendientes → mostrar "Todo al día"
-  → enviar SOLO textos pendientes al modelo Gemma
-    prompt: "Clasifica cada error con uno de estos pattern_code: VERB_TENSE, PREPOSITIONS..."
-  → INSERT INTO corrections (message_id, original, corrected, tip, pattern_code)
-  → UPDATE messages SET analyzed=1 WHERE id IN (...)
-  → devolver correcciones nuevas al panel
-```
+- Se acumulan tokens en un búfer.
+- Al detectar fin de oración (`.`, `!`, `?`, `...`, salto de línea) se despacha esa oración a Piper.
+- Piper habla esa oración mientras el modelo sigue generando las siguientes.
+- Piper añade ~0.2 s de silencio entre oraciones (`--sentence_silence`), lo que produce pausas naturales.
 
-### 3. Panel de presentación
-```
-  → SELECT pattern_code, array_agg(original), array_agg(corrected)
-    FROM corrections
-    GROUP BY pattern_code
-    ORDER BY pattern_code
-```
-- **Una tarjeta por patrón** con título del patrón
-- Cada tarjeta lista los ejemplos (original → corregido) acumulados
-- Los nuevos ejemplos se agregan a la tarjeta existente del mismo patrón
+## 4. Diseño v1 (mínimo viable)
 
-### 4. Consulta inicial (al cargar el panel)
-```
-  → SELECT p.code, p.label, c.original, c.corrected, c.tip
-    FROM corrections c
-    JOIN patterns p ON p.code = c.pattern_code
-    ORDER BY p.code, c.created_at DESC
-```
+El cliente es quien orquesta (ya recibe los tokens por NDJSON). El servidor se reutiliza casi sin cambios.
 
-## Ventajas respecto a archivos planos
+### Servidor
 
-| Aspecto | Archivos planos | Base de datos |
-|---------|----------------|---------------|
-| Análisis incremental | ❌ Siempre analiza todo | ✅ Solo lo nuevo |
-| Deduplicación | ❌ Misma corrección repetida | ✅ Una tarjeta por patrón |
-| Clasificación | ❌ Sin estructura | ✅ pattern_code |
-| Consultas | ❌ grep manual | ✅ SQL |
-| Persistencia | ✅ Simple | ✅ Simple (1 archivo) |
+1. **`src/lib/sentenceSplitter.ts`** (nuevo)
+   - `splitSentences(text: string): { sentences: string[]; remainder: string }`
+   - Divide por `/([.!?…]+)(?=\s|$)/` o saltos de línea.
+   - Regla conservadora: solo corta si el signo va seguido de espacio o fin (evita romper abreviaciones tipo `Mr.`).
+   - Longitud máxima de búfer (~120 chars): si una oración es muy larga y no tiene puntuación, forzar corte para no bloquear la voz.
+   - Devuelve el `remainder` para seguir acumulando.
 
-## Pasos de implementación
+2. **Reutilizar `POST /api/tts`** (no requiere cambios en v1)
+   - Se llama **una vez por oración**, no por respuesta completa.
+   - Cada llamada devuelve el WAV de esa oración.
+   - Nota: `src/pages/api/tts.ts:buildWav` normaliza el pico al 80 % por oración; la variación de volumen entre frases es menor (riesgo bajo, se puede revisar en v2).
 
-1. `npm install sql.js`
-2. Crear `src/lib/database.ts`:
-   - `initDB()` → crea tablas si no existen, inserta patrones por defecto
-   - `insertMessage(text)` → inserta utterance no analizada
-   - `getPendingMessages()` → SELECT * WHERE analyzed=0
-   - `insertCorrection(messageId, original, corrected, tip, patternCode)`
-   - `markAnalyzed(messageIds)` → UPDATE messages SET analyzed=1
-   - `getCorrectionsByPattern()` → SELECT agrupado por pattern_code
-3. Modificar `modelManager.ts`:
-   - Importar y llamar `insertMessage()` en `processAudio`
-4. Modificar `generate-corrections.ts`:
-   - Leer pendientes con `getPendingMessages()`
-   - Prompt al modelo pidiendo clasificación por pattern_code
-   - Insertar correcciones con `insertCorrection()`
-   - Marcar como analizados con `markAnalyzed()`
-5. Modificar panel (`index.astro`):
-   - Renderizar una tarjeta por pattern_code
-   - Cada tarjeta lista ejemplos acumulados
-6. Eliminar `UserSpeach.trace` (reemplazado)
-7. Mantener `Tips.trace` como backup opcional
+### Cliente (`src/components/AudioRecorder.astro`)
+
+3. **Búfer de oraciones en el bucle NDJSON** (donde hoy se acumula `fullResponse`):
+   - Por cada `parsed.chunk`, añadirlo al búfer y a `fullResponse` (el texto del mensaje sigue mostrándose completo, como ahora).
+   - Llamar `splitSentences(buffer)`; enviar cada `sentence` a `queueSpeech(sentence)` y guardar el `remainder`.
+   - Al recibir `{ done: true }`, hacer un último flush del `remainder` (si no está vacío).
+
+4. **Cola de reproducción** (`queueSpeech`):
+   - Encadenar los `fetch('/api/tts')` en una **promise chain** (serializar) para no lanzar varios procesos Piper concurrentes en CPU.
+   - Mantener `audioQueue: string[]` (URLs de objetos) + flag `isPlaying`.
+   - `playNext()`: si no está sonando y hay audio en cola, crea `new Audio(url)` y reproduce; al `ended` pasa al siguiente.
+   - La primera oración suena apenas Piper la sintetiza, sin esperar al resto del modelo.
+
+5. **UI/estado**:
+   - `status = 'Speaking...'` al empezar la cola.
+   - Volver a `'Click to start recording'` solo cuando la **última** oración termina (`queue empty && !isPlaying`).
+   - Si el usuario inicia una nueva grabación mientras suena audio, detener la cola y la reproducción (limpiar `audioQueue`, pausar `audio`).
+   - Mantener el caché `audioCache` existente, con la oración como clave.
+
+## 5. Diseño v2 (mejora de latencia, opcional)
+
+Proceso Piper persistente en vez de reiniciar por oración.
+
+- **Validado:** `piper.exe --json-input --output_raw` procesa cada línea JSON en cuanto llega, sin esperar EOF (cada oración produce su audio inmediatamente).
+- **Servidor:** módulo `src/lib/piperStream.ts` que mantiene un único proceso Piper, con un `synthesize(sentence) => Promise<Buffer>` que escribe `{"text":"..."}\n` a stdin y acumula el PCM de salida.
+  - Dificultad: delimitar el audio de una oración vs. la siguiente en stdout. Opciones:
+    - Detectar silencio en el PCM (`--sentence_silence` añade silencio al final de cada oración) por análisis de amplitud.
+    - O no delimitar: enviar PCM continuo al cliente y reproducirlo concatenado con Web Audio API (el silencio entre oraciones suena natural).
+- **Endpoint SSE `POST /api/tts/stream`:** mantiene la conexión, recibe oraciones del cliente (o mejor aún, orquesta el stream del modelo en el servidor) y transmite PCM/WAV por trozos.
+- **Cliente:** reproducir con `AudioContext` (cola de `AudioBuffer`) en vez de `<audio>` para latencia mínima; `buildWav` se reemplaza por alimentar directamente PCM normalizado.
+
+## 6. Casos borde
+
+| Caso | Manejo |
+|------|--------|
+| Abreviaciones (`Mr.`, `U.S.`) | El divisor exige espacio/EOF después del signo; poco frecuente en texto conversacional. |
+| Oración sin puntuación al final | Flush al llegar `done`, o corte por longitud máxima (~120 chars). |
+| Oración extremadamente larga | Corte forzado por longitud para que la voz no se bloquee. |
+| Resto vacío | No enviar a TTS oraciones en blanco. |
+| Cancelación / nueva grabación | Parar cola y audio actual. |
+| Fallo de Piper en una oración | `catch` por oración: seguir con la siguiente, sin romper el stream. |
+
+## 7. Validación
+
+1. `npx astro dev` (ver `AGENTS.md`: usar `astro dev --background`).
+2. Hablar una frase y verificar:
+   - El texto del mensaje se completa token a token (como ahora).
+   - El audio empieza con la **primera oración**, antes de que termine de escribirse la respuesta.
+3. Medir y comparar el tiempo hasta el primer audio (antes: fin del modelo + síntesis completa; después: primera oración lista).
+4. Probar 2–3 turnos consecutivos y una cancelación a mitad de la pronunciación.
+
+## 8. Archivos afectados
+
+| Archivo | Cambio |
+|---------|--------|
+| `src/lib/sentenceSplitter.ts` | Nuevo: divisor de oraciones con `remainder`. |
+| `src/components/AudioRecorder.astro` | Búfer de oraciones, `queueSpeech`, cola de reproducción, flush final. |
+| `src/pages/api/tts.ts` | Sin cambios en v1 (reutilizado por oración). |
+| `src/lib/piperStream.ts` (v2) | Nuevo: proceso Piper persistente con `--json-input`. |
+| `src/pages/api/tts/stream.ts` (v2) | Nuevo: endpoint SSE de síntesis continua. |

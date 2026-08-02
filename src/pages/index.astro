@@ -4,11 +4,11 @@ import ChatDisplay from '../components/ChatDisplay.astro';
 import AudioRecorder from '../components/AudioRecorder.astro';
 ---
 
-<Layout title="FreeSpeak - Practice Speaking">
+<Layout title="FreeSpeak Unlimited">
   <main class="app">
     <header class="header">
-      <h1>FreeSpeak</h1>
-      <p class="subtitle">Practice speaking English with AI</p>
+      <h1>FreeSpeak Unlimited</h1>
+      <p class="subtitle">Practice speaking English without limits</p>
     </header>
 
     <div class="main-content">
@@ -25,8 +25,26 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       <aside class="trace-panel">
         <h3>Trace de Correcciones</h3>
         <button id="generate-corrections" class="trace-btn">Generar Correcciones</button>
+        <button id="clear-record" class="clear-btn">Limpiar registro</button>
         <div id="trace-results" class="trace-results">
           <p class="trace-empty">Presiona el botón para generar correcciones de tu conversación</p>
+        </div>
+      </aside>
+
+      <aside class="pomodoro-panel">
+        <h3>Pomodoro</h3>
+        <div class="pomodoro-time" id="pomodoro-time">25:00</div>
+        <div class="pomodoro-controls">
+          <button id="pomodoro-toggle" class="pomodoro-btn">Iniciar</button>
+          <button id="pomodoro-reset" class="pomodoro-btn ghost">Reiniciar</button>
+        </div>
+
+        <div class="panel-divider"></div>
+
+        <h3 class="expressions-title">Nuevas Expresiones</h3>
+        <p class="expressions-hint">Selecciona una frase en el chat y haz clic derecho para guardarla aquí</p>
+        <div id="expressions-list" class="expressions-list">
+          <p class="expressions-empty">Aún no hay expresiones guardadas</p>
         </div>
       </aside>
     </div>
@@ -37,6 +55,10 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       <div class="modal-spinner"></div>
       <p>Enviando el system prompt de conversación y de correcciones al cache...</p>
     </div>
+  </div>
+
+  <div id="ctx-menu" class="ctx-menu" style="display:none">
+    <button id="ctx-add-expression" class="ctx-item">Guardar en Nuevas Expresiones</button>
   </div>
 
 <script>
@@ -100,6 +122,237 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     btn.disabled = false;
     btn.textContent = 'Generar Correcciones';
   });
+
+  document.getElementById('clear-record')?.addEventListener('click', async () => {
+    const btn = document.getElementById('clear-record');
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = 'Limpiando...';
+    try {
+      const res = await fetch('/api/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await res.json();
+      if (data.error) {
+        alert(`Error: ${data.error}`);
+      } else {
+        const results = document.getElementById('trace-results');
+        if (results) results.innerHTML = '<p class="trace-empty">Correcciones limpiadas.</p>';
+      }
+    } catch (e) {
+      alert('Error al limpiar el registro.');
+    }
+    btn.disabled = false;
+    btn.textContent = 'Limpiar registro';
+  });
+
+  // Pomodoro timer: 25 min work / 5 min break, with pause/resume
+  (() => {
+    const WORK_MIN = 25;
+    const BREAK_MIN = 5;
+    const timeEl = document.getElementById('pomodoro-time');
+    const toggleBtn = document.getElementById('pomodoro-toggle');
+    const resetBtn = document.getElementById('pomodoro-reset');
+    if (!timeEl || !toggleBtn || !resetBtn) return;
+
+    let mode = 'work';
+    let remaining = WORK_MIN * 60;
+    let running = false;
+    let intervalId = null;
+    let endTime = 0;
+    let ringCtx = null;
+
+    function ensureRingCtx() {
+      if (!ringCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        ringCtx = new Ctx();
+      }
+      if (ringCtx.state === 'suspended') ringCtx.resume();
+      return ringCtx;
+    }
+
+    function playRing() {
+      try {
+        if (!ringCtx) return;
+        const ctx = ringCtx;
+        const now = ctx.currentTime;
+        const notes = [880, 880, 880, 660];
+        const step = 0.3;
+        const dur = 0.22;
+        notes.forEach((freq, i) => {
+          const start = now + i * step;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + dur + 0.05);
+        });
+      } catch (e) {
+        console.error('Ring sound error:', e);
+      }
+    }
+
+    function fmt(totalSeconds) {
+      const s = Math.max(0, Math.ceil(totalSeconds));
+      return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    }
+
+    function render() {
+      timeEl.textContent = fmt(remaining);
+      toggleBtn.textContent = running ? 'Pausar' : 'Iniciar';
+      toggleBtn.classList.toggle('hidden', remaining === 0);
+      resetBtn.textContent = (mode === 'work' && remaining === WORK_MIN * 60 && !running) ? 'Reiniciar' : 'Reiniciar';
+    }
+
+    function tick() {
+      remaining = Math.max(0, (endTime - Date.now()) / 1000);
+      if (remaining <= 0) {
+        clearInterval(intervalId);
+        running = false;
+        switchMode();
+      }
+      render();
+    }
+
+    function switchMode() {
+      playRing();
+      mode = mode === 'work' ? 'break' : 'work';
+      remaining = (mode === 'work' ? WORK_MIN : BREAK_MIN) * 60;
+      if (toggleBtn) toggleBtn.textContent = 'Iniciar';
+      startTimer();
+    }
+
+    function startTimer() {
+      if (remaining <= 0) return;
+      running = true;
+      endTime = Date.now() + remaining * 1000;
+      clearInterval(intervalId);
+      intervalId = setInterval(tick, 200);
+      render();
+    }
+
+    function pauseTimer() {
+      running = false;
+      clearInterval(intervalId);
+      intervalId = null;
+      render();
+    }
+
+    function resetTimer() {
+      running = false;
+      clearInterval(intervalId);
+      intervalId = null;
+      mode = 'work';
+      remaining = WORK_MIN * 60;
+      render();
+    }
+
+    toggleBtn.addEventListener('click', () => {
+      ensureRingCtx();
+      if (running) pauseTimer();
+      else startTimer();
+    });
+
+    resetBtn.addEventListener('click', resetTimer);
+
+    render();
+  })();
+
+  // New Expressions panel: load saved expressions as mini cards
+  const expressionsList = document.getElementById('expressions-list');
+  async function loadExpressions() {
+    if (!expressionsList) return;
+    try {
+      const res = await fetch('/api/expressions');
+      const data = await res.json();
+      if (data.expressions) {
+        if (data.expressions.length === 0) {
+          expressionsList.innerHTML = '<p class="expressions-empty">Aún no hay expresiones guardadas</p>';
+        } else {
+          expressionsList.innerHTML = data.expressions
+            .map((e) => `
+              <div class="miniTarjeta">
+                <span class="miniTarjeta-text">${e.expression}</span>
+                <button class="miniTarjeta-check" data-id="${e.id}" title="Marcar como aprendida">✔</button>
+              </div>`)
+            .join('');
+        }
+      }
+    } catch (error) {
+      console.error('Error loading expressions:', error);
+    }
+  }
+  loadExpressions();
+
+  // Delete expression on check click
+  expressionsList?.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement).closest('.miniTarjeta-check');
+    if (!btn) return;
+    const id = (btn as HTMLElement).dataset.id;
+    if (!id) return;
+    try {
+      await fetch(`/api/expressions/${id}`, { method: 'DELETE' });
+      await loadExpressions();
+    } catch (error) {
+      console.error('Error deleting expression:', error);
+    }
+  });
+
+  // Custom context menu on chat messages: add selected text to NewExpressions
+  const chatDisplay = document.getElementById('chat');
+  const contextMenu = document.getElementById('ctx-menu');
+  let contextMenuItem = null;
+
+  chatDisplay?.addEventListener('contextmenu', async (event) => {
+    const selection = window.getSelection()?.toString().trim();
+    if (!selection) return;
+
+    event.preventDefault();
+    contextMenuItem = { expression: selection };
+
+    if (contextMenu) {
+      contextMenu.style.left = `${event.clientX}px`;
+      contextMenu.style.top = `${event.clientY}px`;
+      contextMenu.style.display = 'block';
+    }
+  });
+
+  document.addEventListener('click', () => {
+    if (contextMenu) contextMenu.style.display = 'none';
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && contextMenu) contextMenu.style.display = 'none';
+  });
+
+  document.getElementById('ctx-add-expression')?.addEventListener('click', async () => {
+    if (contextMenu) contextMenu.style.display = 'none';
+    if (!contextMenuItem) return;
+
+    try {
+      const res = await fetch('/api/expressions/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(contextMenuItem),
+      });
+      const data = await res.json();
+      if (data.error) {
+        alert(`Error: ${data.error}`);
+      } else {
+        await loadExpressions();
+      }
+    } catch (error) {
+      console.error('Error saving expression:', error);
+    }
+  });
 </script>
 </Layout>
 
@@ -151,7 +404,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     display: flex;
     flex-direction: column;
     height: 100vh;
-    max-width: 1100px;
+    max-width: 1420px;
     margin: 0 auto;
     padding: 1rem;
   }
@@ -255,6 +508,27 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     transform: none;
   }
 
+  .clear-btn {
+    padding: 0.6rem 1rem;
+    border: 1px solid var(--recording, #dc2626);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--recording, #dc2626);
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+
+  .clear-btn:hover:not(:disabled) {
+    background: rgba(220, 38, 38, 0.1);
+  }
+
+  .clear-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   .trace-results {
     flex: 1;
     overflow-y: auto;
@@ -352,5 +626,191 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     font-size: 0.85rem;
     font-weight: 500;
     line-height: 1.4;
+  }
+
+  .pomodoro-panel {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    border-left: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .pomodoro-panel h3 {
+    font-size: 1rem;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+  }
+
+  .pomodoro-panel h3::before {
+    content: '⏱️';
+    font-size: 1.1rem;
+  }
+
+  .pomodoro-panel h3.expressions-title::before {
+    content: '✨';
+  }
+
+  .pomodoro-time {
+    font-size: 3rem;
+    font-weight: 700;
+    font-family: monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .pomodoro-controls {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+  }
+
+  .pomodoro-btn {
+    flex: 1;
+    padding: 0.55rem 0.5rem;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  }
+
+  .pomodoro-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+
+  .pomodoro-btn.ghost {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text);
+    box-shadow: none;
+  }
+
+  .pomodoro-btn.ghost:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(59, 130, 246, 0.08);
+  }
+
+  .pomodoro-btn.hidden {
+    display: none;
+  }
+
+  .panel-divider {
+    width: 100%;
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 0.25rem 0;
+  }
+
+  .pomodoro-panel h3:not(:first-child) {
+    margin-top: 0.25rem;
+  }
+
+  .expressions-hint {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  .expressions-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-height: 120px;
+  }
+
+  .expressions-empty {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-align: center;
+    padding: 1.5rem 0;
+  }
+
+  .miniTarjeta {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 8px 12px;
+    background-color: var(--surface-light);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    max-width: 100%;
+    color: var(--text);
+    font-size: 0.82rem;
+    line-height: 1.4;
+    word-break: break-word;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .miniTarjeta-text {
+    flex: 1;
+  }
+
+  .miniTarjeta-check {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border: 1px solid rgba(74, 222, 128, 0.5);
+    border-radius: 50%;
+    background: transparent;
+    color: #4ade80;
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .miniTarjeta-check:hover {
+    background: rgba(74, 222, 128, 0.15);
+    transform: scale(1.1);
+  }
+
+  .ctx-menu {
+    position: fixed;
+    z-index: 9998;
+    background: #0f172a;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 8px;
+    padding: 0.25rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    min-width: 200px;
+  }
+
+  .ctx-item {
+    display: block;
+    width: 100%;
+    padding: 0.5rem 0.75rem;
+    border: none;
+    background: transparent;
+    color: var(--text);
+    font-size: 0.82rem;
+    text-align: left;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .ctx-item:hover {
+    background: rgba(59, 130, 246, 0.15);
+    color: var(--primary);
   }
 </style>
