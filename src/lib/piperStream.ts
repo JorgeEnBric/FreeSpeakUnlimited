@@ -1,9 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'child_process';
 import { existsSync } from 'fs';
-import { join } from 'path';
-
-const PIPER_EXE = join(process.cwd(), 'piper', 'dist', 'piper', 'piper.exe');
-const VOICE_MODEL = join(process.cwd(), 'src', 'models', 'en_US-lessac-medium.onnx');
+import { PIPER_EXE, PIPER_VOICE_MODEL } from './modelConfig';
 
 let piper: ChildProcessWithoutNullStreams | null = null;
 let starting = false;
@@ -19,7 +16,7 @@ export function ensurePiperStarted(): Promise<void> {
 
   starting = true;
   startPromise = new Promise<void>((resolve) => {
-    if (!existsSync(PIPER_EXE) || !existsSync(VOICE_MODEL)) {
+    if (!existsSync(PIPER_EXE) || !existsSync(PIPER_VOICE_MODEL)) {
       starting = false;
       startPromise = null;
       resolve();
@@ -27,7 +24,7 @@ export function ensurePiperStarted(): Promise<void> {
     }
 
     piper = spawn(PIPER_EXE, [
-      '-m', VOICE_MODEL,
+      '-m', PIPER_VOICE_MODEL,
       '--json-input',
       '--output_raw',
       '--quiet',
