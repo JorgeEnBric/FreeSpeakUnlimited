@@ -5,8 +5,9 @@ import { splitSentences } from '../../lib/sentenceSplitter';
 
 export const prerender = false;
 
-const DRAIN_SILENCE_MS = 700;
+const DRAIN_SILENCE_MS = 2000;
 const NO_AUDIO_TIMEOUT_MS = 2500;
+const MAX_DRAIN_MS = 8000;
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -34,6 +35,8 @@ export const POST: APIRoute = async ({ request }) => {
         let lastAudioAt = Date.now();
         let lastWriteAt = Date.now();
         let gotAudio = false;
+        let sentencesWritten = 0;
+        let audioChunksSent = 0;
 
         const send = (obj: object) => {
           if (streamClosed) return;
@@ -48,6 +51,7 @@ export const POST: APIRoute = async ({ request }) => {
           if (streamClosed) return;
           gotAudio = true;
           lastAudioAt = Date.now();
+          audioChunksSent++;
           send({ audio: chunk.toString('base64') });
         };
 
@@ -60,7 +64,14 @@ export const POST: APIRoute = async ({ request }) => {
           const check = () => {
             const sinceAudio = Date.now() - lastAudioAt;
             const sinceWrite = Date.now() - lastWriteAt;
-            if (gotAudio ? sinceAudio > DRAIN_SILENCE_MS : sinceWrite > NO_AUDIO_TIMEOUT_MS) {
+            if (gotAudio) {
+              const allSpoken = audioChunksSent >= sentencesWritten;
+              if ((sinceAudio > DRAIN_SILENCE_MS && allSpoken) || sinceAudio > MAX_DRAIN_MS) {
+                resolve();
+              } else {
+                closeTimer = setTimeout(check, 200);
+              }
+            } else if (sinceWrite > NO_AUDIO_TIMEOUT_MS) {
               resolve();
             } else {
               closeTimer = setTimeout(check, 200);
@@ -84,12 +95,14 @@ export const POST: APIRoute = async ({ request }) => {
             sentenceBuffer = remainder;
             for (const sentence of sentences) {
               writeSentence(sentence);
+              sentencesWritten++;
               lastWriteAt = Date.now();
             }
           }
           const { remainder } = splitSentences(sentenceBuffer);
           if (remainder) {
             writeSentence(remainder);
+            sentencesWritten++;
             lastWriteAt = Date.now();
           }
 
@@ -104,6 +117,7 @@ export const POST: APIRoute = async ({ request }) => {
           try { controller.close(); } catch { /* already closed */ }
           const modelMs = Date.now() - t0;
           console.log(`Tiempo en modelo IA: ${Math.round(modelMs / 1000)} segundos`);
+          console.log(`TTS stream: ${sentencesWritten} sentencias escritas, ${audioChunksSent} chunks de audio enviados`);
           if (startTime) {
             console.log(`Tiempo total: ${Math.round((Date.now() - startTime) / 1000)} segundos`);
           }
