@@ -3,38 +3,10 @@ import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { execFileSync } from 'child_process';
 import { isRunning, ensureStarted, complete } from '../../lib/llamaServer';
+import { findLlamaCli, getLlamaBinDir, getGemmaModelPath } from '../../lib/modelConfig';
 import { PATTERN_LIST, CORRECTIONS_SYSTEM_PROMPT } from '../../lib/prompts';
 
-const MODELS_DIR = join(process.cwd(), 'src', 'models');
 const TEMP_DIR = join(process.cwd(), 'temp');
-const LLAMA_BIN_DIRS = [
-  join(MODELS_DIR, 'llama-b10182-bin-win-cpu-x64'),
-  join(MODELS_DIR, 'llama-b10182'),
-];
-function findLlamaCli(): string {
-  for (const dir of LLAMA_BIN_DIRS) {
-    const candidate = join(dir, 'llama-cli.exe');
-    if (existsSync(candidate)) return candidate;
-  }
-  return 'llama-cli.exe';
-}
-function getLlamaBinDir(): string {
-  for (const dir of LLAMA_BIN_DIRS) {
-    if (existsSync(join(dir, 'llama-cli.exe'))) return dir;
-  }
-  return LLAMA_BIN_DIRS[0];
-}
-function getGemmaModelPath(): string {
-  const candidates = [
-    join(MODELS_DIR, 'llama-b10182', 'gemma-2-2b-it-q4_k_m.gguf'),
-    join(MODELS_DIR, 'llama-b10182', '2b_it_v1p1.gguf'),
-    join(MODELS_DIR, 'llama-b10182', 'gemma-1.1-2b-it-cpu-int4.gguf'),
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return candidates[0];
-}
 
 export const prerender = false;
 

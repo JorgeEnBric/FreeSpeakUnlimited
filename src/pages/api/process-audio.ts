@@ -42,7 +42,7 @@ export const POST: APIRoute = async ({ request }) => {
     if (missing.length > 0) {
       await unlink(audioPath);
       return new Response(JSON.stringify({
-        error: `Missing models: ${missing.join(', ')}. Place them in /src/models/`,
+        error: `Missing models: ${missing.join(', ')}. Configure their locations in models.env`,
       }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },

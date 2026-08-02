@@ -1,52 +1,9 @@
 import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { CONVERSATION_SYSTEM_PROMPT as SYSTEM_PROMPT } from './prompts';
+import { WHISPER_CLI, WHISPER_BIN_DIR, WHISPER_MODEL, findLlamaCli, getLlamaBinDir, getGemmaModelPath } from './modelConfig';
 
-const MODELS_DIR = join(process.cwd(), 'src', 'models');
-const WHISPER_BIN_DIR = join(MODELS_DIR, 'whisper-bin-x64');
-const WHISPER_CLI = join(WHISPER_BIN_DIR, 'whisper-cli.exe');
-const LLAMA_BIN_DIRS = [
-  join(MODELS_DIR, 'llama-b10182-bin-win-cpu-x64'),
-  join(MODELS_DIR, 'llama-b10182'),
-];
-function findLlamaCli(): string {
-  for (const dir of LLAMA_BIN_DIRS) {
-    const candidate = join(dir, 'llama-cli.exe');
-    if (existsSync(candidate)) return candidate;
-  }
-  // Try PATH as last resort
-  return 'llama-cli.exe';
-}
-const LLAMA_CLI = findLlamaCli();
-function getLlamaBinDir(): string {
-  for (const dir of LLAMA_BIN_DIRS) {
-    if (existsSync(join(dir, 'llama-cli.exe'))) return dir;
-  }
-  return LLAMA_BIN_DIRS[0];
-}
 const TEMP_DIR = join(process.cwd(), 'temp');
-
-const GEMMA_MODEL = 'gemma-1.1-2b-it-cpu-int4';
-
-function getGemmaModelPath(): string {
-  const candidates = [
-    join(MODELS_DIR, 'llama-b10182', 'gemma-2-2b-it-q4_k_m.gguf'),
-    join(MODELS_DIR, 'llama-b10182', '2b_it_v1p1.gguf'),
-    join(MODELS_DIR, 'llama-b10182', 'gemma-1.1-2b-it-cpu-int4.gguf'),
-    join(MODELS_DIR, GEMMA_MODEL, `${GEMMA_MODEL}.gguf`),
-    join(MODELS_DIR, GEMMA_MODEL, `${GEMMA_MODEL}.bin`),
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-
-  const dir = join(MODELS_DIR, 'llama-b10182');
-  if (existsSync(dir)) {
-    const files = require('fs').readdirSync(dir).filter(f => f.endsWith('.gguf'));
-    if (files.length > 0) return join(dir, files[0]);
-  }
-  return candidates[0];
-}
 
 const FALLBACK_RESPONSES = [
   "That's great! Can you tell me more about that?",
@@ -58,10 +15,10 @@ const FALLBACK_RESPONSES = [
 
 export function checkModels() {
   return {
-    whisper: existsSync(join(MODELS_DIR, 'ggml-tiny.en', 'ggml-tiny.en.bin')),
+    whisper: existsSync(WHISPER_MODEL),
     gemma: existsSync(getGemmaModelPath()),
     whisperCli: existsSync(WHISPER_CLI),
-    llamaCli: existsSync(LLAMA_CLI),
+    llamaCli: existsSync(findLlamaCli()),
   };
 }
 
@@ -94,7 +51,6 @@ async function runWhisper(audioPath: string, modelPath: string): Promise<string>
     '-otxt',
     '-of', join(TEMP_DIR, basename(wavPath, '.wav')),
   ], { timeout: 120000, cwd: WHISPER_BIN_DIR, stdio: 'pipe' });
-
   // Read result
   let text = '';
   if (existsSync(txtPath)) {
@@ -113,7 +69,7 @@ function mockTranscribe(): string {
 }
 
 export async function transcribeAudio(audioPath: string): Promise<string> {
-  const modelPath = join(MODELS_DIR, 'ggml-tiny.en', 'ggml-tiny.en.bin');
+  const modelPath = WHISPER_MODEL;
   const status = checkModels();
 
   if (!status.whisper) {
@@ -156,7 +112,7 @@ export async function generateResponse(prompt: string): Promise<string> {
     const ts = Date.now();
     const outFile = join(TEMP_DIR, `output-${ts}.txt`);
 
-    execFileSync(LLAMA_CLI, [
+    execFileSync(findLlamaCli(), [
       '-m', modelPath,
       '-sys', SYSTEM_PROMPT,
       '-p', prompt,

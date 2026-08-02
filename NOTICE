@@ -1,0 +1,194 @@
+FreeSpeak Unlimited
+NOTICE
+Third-party software, models, data and licenses
+================================================
+
+This file documents the third-party software, machine-learning models,
+and datasets that are distributed with or used by FreeSpeak Unlimited,
+together with the attribution and license obligations required by their
+respective copyright holders and licensors.
+
+This NOTICE does not modify or replace any of the underlying licenses.
+Model files are located in the `src/models/` directory.
+
+Components covered here
+  1. Google Gemma 2 2B (quantized GGUF) ........... LLM backend
+  2. OpenAI Whisper (model weights) ............... speech recognition
+  3. ggml-org/whisper.cpp (binaries) .............. Whisper inference engine
+  4. ggml-org/llama.cpp (binaries) ................ LLM inference engine
+  5. rhasspy/piper (binaries) ..................... text-to-speech engine
+  6. Piper voice en_US-lessac-medium .............. TTS voice
+  7. Bundled libraries (onnxruntime, espeak-ng) ... inside Piper distribution
+
+========================================================
+1. Google Gemma 2 2B (instruction-tuned, 4-bit quantized)
+========================================================
+Files:
+  src/models/gemma-2-2b-it-q4_k_m/gemma-2-2b-it-q4_k_m.gguf
+
+Copyright (C) 2024 Google LLC.
+
+Gemma is provided under and subject to the Gemma Terms of Use found
+at ai.google.dev/gemma/terms
+
+The above line is the attribution notice required by Section 3.1(4)
+of the Gemma Terms of Use and must be reproduced in this NOTICE.
+
+Additional obligations that apply when Gemma models or derivatives
+are distributed:
+  - Recipients must receive a copy of the Gemma Terms of Use. A full
+    verbatim copy is attached in:
+      src/models/gemma-2-2b-it-q4_k_m/GEMMA_TERMS_OF_USE.txt
+  - The use restrictions of Section 3.2 must be included as an
+    enforceable provision in any agreement governing use/distribution,
+    and subsequent users must be notified that Gemma is subject to
+    those restrictions. FreeSpeak Unlimited's own Terms of Service
+    include this provision (see TERMS_OF_SERVICE.md, section "AI
+    Features and the Gemma Model").
+  - Any modified files must carry prominent notices stating that the
+    files were modified.
+  - Use is additionally subject to the Gemma Prohibited Use Policy at
+    https://ai.google.dev/gemma/prohibited_use_policy
+
+Gemma Terms of Use (official page): https://ai.google.dev/gemma/terms
+Gemma Terms of Use (attached full copy): src/models/gemma-2-2b-it-q4_k_m/GEMMA_TERMS_OF_USE.txt
+
+========================================================
+2. OpenAI Whisper — model weights
+========================================================
+Files:
+  src/models/ggml-tiny.en/ggml-tiny.en.bin
+  (Whisper "tiny.en" model, converted to GGML format)
+
+Copyright (c) 2022 OpenAI
+Licensed under the MIT License (full text in Section 8).
+Source: https://github.com/openai/whisper
+
+========================================================
+3. ggml-org/whisper.cpp — Whisper inference engine
+========================================================
+Files (in src/models/whisper-bin-x64/):
+  whisper-cli.exe, whisper.dll, whisper-*.exe, ggml*.dll,
+  main.exe, bench.exe, stream.exe, command.exe, SDL2.dll, etc.
+
+Copyright (c) 2023-2026 The ggml authors
+Licensed under the MIT License (full text in Section 8).
+Source: https://github.com/ggml-org/whisper.cpp
+
+========================================================
+4. ggml-org/llama.cpp — LLM inference engine
+========================================================
+Files (in src/models/llama-b10182-bin-win-cpu-x64/):
+  llama-server.exe, llama-cli.exe, llama*.exe, llama.dll,
+  ggml*.dll, ggml-rpc-server.exe, mtmd.dll, libomp140.x86_64.dll, etc.
+
+Copyright (c) 2023-2026 The ggml authors
+Licensed under the MIT License (full text in Section 8).
+Source: https://github.com/ggml-org/llama.cpp
+
+========================================================
+5. rhasspy/piper — text-to-speech engine
+========================================================
+Files (in src/models/piper/dist/piper/):
+  piper.exe, piper_phonemize.dll
+
+Copyright (c) 2022 Michael Hansen
+Licensed under the MIT License (full text in Section 8).
+Source: https://github.com/rhasspy/piper
+
+========================================================
+6. Piper voice: en_US-lessac-medium
+========================================================
+Files:
+  src/models/en_US-lessac-medium.onnx
+  src/models/en_US-lessac-medium.onnx.json
+
+Voice distribution: https://huggingface.co/rhasspy/piper-voices
+  (path: en/en_US/lessac/medium)
+
+IMPORTANT - TRAINING DATA LICENSE RESTRICTIONS
+----------------------------------------------
+This voice model was trained on the "Lessac" dataset from the 2013
+Blizzard Challenge. The underlying dataset is owned by Voice Factory
+International, Inc. and Lessac Technologies, Inc. and is licensed
+under a Research Licence Agreement that permits use for research
+purposes only. It explicitly EXCLUDES any commercial purpose,
+including the development, marketing, commercialisation, sale or
+licensing of voice synthesis or speech recognition products or
+services.
+
+Lessac dataset license:
+  https://www.cstr.ed.ac.uk/projects/blizzard/2013/lessac_blizzard2013/license.html
+
+Consequence: redistributing this voice, or using it to provide a
+speech-synthesis service as part of a commercial product, may
+infringe the rights of the dataset licensors. If FreeSpeak Unlimited
+is distributed or sold commercially, a Piper voice trained on
+permissively-licensed data (for example a voice based on public-domain
+or CC-licensed recordings) should be substituted for this voice.
+
+========================================================
+7. Bundled libraries inside the Piper distribution
+========================================================
+The Piper binary distribution bundles the following libraries:
+
+  - onnxruntime.dll / onnxruntime_providers_shared.dll
+      MIT License, Copyright (c) Microsoft Corporation.
+      https://github.com/microsoft/onnxruntime
+
+  - espeak-ng.dll and espeak-ng-data/ (text-to-phoneme conversion)
+      GNU General Public License, version 3 (GPL-3.0-or-later).
+      https://github.com/espeak-ng/espeak-ng
+      https://www.gnu.org/licenses/gpl-3.0.html
+
+  - libtashkeel_model.ort
+      (diacritization model data used by Piper; distributed with
+      Piper under the Piper repository license terms)
+
+Note: espeak-ng is GPL-3.0. Because Piper performs phonemization
+through espeak-ng, distribution of the Piper binaries may carry
+obligations under the GPL for the combined work. Review the GPL text
+before redistributing these binaries in a closed-source or
+commercial offering.
+
+========================================================
+8. MIT License (applies to items 2, 3, 4, 5 and onnxruntime)
+========================================================
+Copyright (c) 2022 OpenAI
+Copyright (c) 2022 Michael Hansen
+Copyright (c) 2023-2026 The ggml authors
+Copyright (c) Microsoft Corporation
+
+Permission is hereby granted, free of charge, to any person obtaining
+a copy of this software and associated documentation files (the
+"Software"), to deal in the Software without restriction, including
+without limitation the rights to use, copy, modify, merge, publish,
+distribute, sublicense, and/or sell copies of the Software, and to
+permit persons to whom the Software is furnished to do so, subject to
+the following conditions:
+
+The above copyright notice and this permission notice shall be
+included in all copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+========================================================
+References
+========================================================
+  - Gemma Terms of Use ............ https://ai.google.dev/gemma/terms
+  - Gemma Prohibited Use Policy ... https://ai.google.dev/gemma/prohibited_use_policy
+  - OpenAI Whisper (MIT) .......... https://github.com/openai/whisper
+  - whisper.cpp (MIT) ............. https://github.com/ggml-org/whisper.cpp
+  - llama.cpp (MIT) ............... https://github.com/ggml-org/llama.cpp
+  - Piper (MIT) ................... https://github.com/rhasspy/piper
+  - Piper voices .................. https://huggingface.co/rhasspy/piper-voices
+  - Lessac dataset license ........ https://www.cstr.ed.ac.uk/projects/blizzard/2013/lessac_blizzard2013/license.html
+  - espeak-ng (GPL-3.0) ........... https://github.com/espeak-ng/espeak-ng
+  - onnxruntime (MIT) ............. https://github.com/microsoft/onnxruntime

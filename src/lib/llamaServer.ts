@@ -1,27 +1,11 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
-import { join } from 'path';
 import { CONVERSATION_SYSTEM_PROMPT, CORRECTIONS_SYSTEM_PROMPT } from './prompts';
-
-const MODELS_DIR = join(process.cwd(), 'src', 'models');
-const LLAMA_BIN_DIR = join(MODELS_DIR, 'llama-b10182-bin-win-cpu-x64');
-const SERVER_EXE = join(LLAMA_BIN_DIR, 'llama-server.exe');
+import { LLAMA_SERVER_EXE, LLAMA_SERVER_BIN_DIR, getGemmaModelPath } from './modelConfig';
 
 const HOST = '127.0.0.1';
 const PORT = 8080;
 const BASE_URL = `http://${HOST}:${PORT}`;
-
-function getGemmaModelPath(): string {
-  const candidates = [
-    join(MODELS_DIR, 'llama-b10182', 'gemma-2-2b-it-q4_k_m.gguf'),
-    join(MODELS_DIR, 'llama-b10182', '2b_it_v1p1.gguf'),
-    join(MODELS_DIR, 'llama-b10182', 'gemma-1.1-2b-it-cpu-int4.gguf'),
-  ];
-  for (const p of candidates) {
-    if (existsSync(p)) return p;
-  }
-  return candidates[0];
-}
 
 let serverProcess: ChildProcess | null = null;
 let starting = false;
@@ -56,7 +40,7 @@ export function ensureStarted(): Promise<void> {
   starting = true;
   startPromise = new Promise(async (resolve) => {
     const modelPath = getGemmaModelPath();
-    if (!existsSync(SERVER_EXE)) {
+    if (!existsSync(LLAMA_SERVER_EXE)) {
       console.warn('[llama-server] exe not found');
       starting = false; resolve(); return;
     }
@@ -65,16 +49,16 @@ export function ensureStarted(): Promise<void> {
       starting = false; resolve(); return;
     }
 
-    serverProcess = spawn(SERVER_EXE, [
+    serverProcess = spawn(LLAMA_SERVER_EXE, [
       '-m', modelPath,
       '--host', HOST,
       '--port', String(PORT),
       '-c', '4096',
       '--parallel', '1',
     ], {
-      cwd: LLAMA_BIN_DIR,
+      cwd: LLAMA_SERVER_BIN_DIR,
       stdio: 'pipe',
-      env: { ...process.env, PATH: `${LLAMA_BIN_DIR};${process.env.PATH}` },
+      env: { ...process.env, PATH: `${LLAMA_SERVER_BIN_DIR};${process.env.PATH}` },
     });
 
     serverProcess.on('error', () => { serverProcess = null; });

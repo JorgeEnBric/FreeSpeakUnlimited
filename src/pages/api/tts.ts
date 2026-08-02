@@ -1,11 +1,8 @@
 import type { APIRoute } from 'astro';
 import { spawn } from 'child_process';
-import { join } from 'path';
+import { PIPER_EXE, PIPER_VOICE_MODEL } from '../../lib/modelConfig';
 
 export const prerender = false;
-
-const PIPER_EXE = join(process.cwd(), 'piper', 'dist', 'piper', 'piper.exe');
-const VOICE_MODEL = join(process.cwd(), 'src', 'models', 'en_US-lessac-medium.onnx');
 
 // Scales 16-bit PCM so the peak sits at ~80% of full scale, removing clipping
 function buildWav(pcm: Buffer): Buffer {
@@ -66,7 +63,7 @@ export const POST: APIRoute = async ({ request }) => {
 
     const chunks: Buffer[] = [];
     const child = spawn(PIPER_EXE, [
-      '--model', VOICE_MODEL,
+      '--model', PIPER_VOICE_MODEL,
       '--length_scale', '1.15',
       '--noise_scale', '0.5',
       '--output_raw',
