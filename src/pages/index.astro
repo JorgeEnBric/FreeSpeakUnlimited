@@ -243,7 +243,11 @@ import AudioRecorder from '../components/AudioRecorder.astro';
           expressionsList.innerHTML = '<p class="expressions-empty">Aún no hay expresiones guardadas</p>';
         } else {
           expressionsList.innerHTML = data.expressions
-            .map((e) => `<div class="miniTarjeta">${e.expression}</div>`)
+            .map((e) => `
+              <div class="miniTarjeta">
+                <span class="miniTarjeta-text">${e.expression}</span>
+                <button class="miniTarjeta-check" data-id="${e.id}" title="Marcar como aprendida">✔</button>
+              </div>`)
             .join('');
         }
       }
@@ -252,6 +256,20 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
   }
   loadExpressions();
+
+  // Delete expression on check click
+  expressionsList?.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement).closest('.miniTarjeta-check');
+    if (!btn) return;
+    const id = (btn as HTMLElement).dataset.id;
+    if (!id) return;
+    try {
+      await fetch(`/api/expressions/${id}`, { method: 'DELETE' });
+      await loadExpressions();
+    } catch (error) {
+      console.error('Error deleting expression:', error);
+    }
+  });
 
   // Custom context menu on chat messages: add selected text to NewExpressions
   const chatDisplay = document.getElementById('chat');
@@ -718,6 +736,32 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     font-size: 0.82rem;
     line-height: 1.4;
     word-break: break-word;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .miniTarjeta-text {
+    flex: 1;
+  }
+
+  .miniTarjeta-check {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border: 1px solid rgba(74, 222, 128, 0.5);
+    border-radius: 50%;
+    background: transparent;
+    color: #4ade80;
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .miniTarjeta-check:hover {
+    background: rgba(74, 222, 128, 0.15);
+    transform: scale(1.1);
   }
 
   .ctx-menu {
