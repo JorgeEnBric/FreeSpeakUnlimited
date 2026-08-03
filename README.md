@@ -3,7 +3,6 @@
 Practice speaking English with AI — free, unlimited, and **100% local**. No cloud, no API keys, no subscription.
 
 <img width="1365" height="639" alt="imagen" src="https://github.com/user-attachments/assets/f355071d-36af-48df-a745-b81a41f92c32" />
-<img width="1082" height="373" alt="imagen" src="https://github.com/user-attachments/assets/bb8b7c4e-63aa-41a5-aa95-649da364bf4c" />
 
 ## Features
 
