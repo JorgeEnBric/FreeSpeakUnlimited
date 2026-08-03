@@ -19,7 +19,7 @@ Practice speaking English with AI — free, unlimited, and **100% local**. No cl
 
 - **Node.js >= 22.12** (LTS recommended)
 - **Git**
-- **models.zip** — contains all the AI models (not included in the repo, gitignored)
+- **models.zip** — contains all the AI models (Download models.zip from [Release] v1.0.0)
 
 ## Setup
 
