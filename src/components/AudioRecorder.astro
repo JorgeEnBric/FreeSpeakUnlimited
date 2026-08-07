@@ -28,8 +28,9 @@
         <button id="suggest-insert" class="suggest-insert" type="button">…</button>
       </div>
       <div class="transcript-actions">
-        <button id="transcript-cancel" class="transcript-btn ghost">Descartar</button>
-        <button id="transcript-confirm" class="transcript-btn">Enviar</button>
+        <button id="transcript-replay" class="transcript-btn ghost replay" type="button" aria-label="Escuchar tu audio">&#9654; Escuchar audio</button>
+        <button id="transcript-cancel" class="transcript-btn ghost" type="button">Descartar</button>
+        <button id="transcript-confirm" class="transcript-btn" type="button">Enviar</button>
       </div>
     </div>
   </div>
@@ -230,11 +231,17 @@
     const sel = window.getSelection();
     const rect = sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
     const boxRect = box.getBoundingClientRect();
+    const popRect = suggestPop.getBoundingClientRect();
+    const actionsRow = box.querySelector('.transcript-actions');
+    const actionsTop = actionsRow ? actionsRow.getBoundingClientRect().top : boxRect.bottom;
     let left = (rect ? rect.left : boxRect.left) - boxRect.left;
     let top = (rect ? rect.bottom : boxRect.top) - boxRect.top + 8;
     const maxLeft = boxRect.width - 180;
     if (left < 8) left = 8;
     if (left > maxLeft) left = maxLeft;
+    if (top + popRect.height + 8 > actionsTop - boxRect.top) {
+      top = Math.max(8, (rect ? rect.top : boxRect.top) - boxRect.top - popRect.height - 8);
+    }
     suggestPop.style.left = `${left}px`;
     suggestPop.style.top = `${top}px`;
   }
@@ -318,7 +325,43 @@
       });
   }
 
+  function placeCaretAtPoint(x, y) {
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    let range = null;
+    if (document.caretRangeFromPoint) {
+      range = document.caretRangeFromPoint(x, y);
+    } else if (document.caretPositionFromPoint) {
+      const pos = document.caretPositionFromPoint(x, y);
+      if (pos) {
+        range = document.createRange();
+        range.setStart(pos.offsetNode, pos.offset);
+        range.collapse(true);
+      }
+    }
+    if (range) sel.addRange(range);
+  }
+
   if (transcriptEdit) transcriptEdit.addEventListener('input', onTranscriptInput);
+  if (transcriptEdit) {
+    transcriptEdit.addEventListener('click', (e) => {
+      const span = e.target.closest('.doubt');
+      if (!span || !transcriptEdit.contains(span)) return;
+      e.preventDefault();
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+    transcriptEdit.addEventListener('dblclick', (e) => {
+      const span = e.target.closest('.doubt');
+      if (!span || !transcriptEdit.contains(span)) return;
+      e.preventDefault();
+      placeCaretAtPoint(e.clientX, e.clientY);
+    });
+  }
   if (suggestInsertBtn) {
     suggestInsertBtn.addEventListener('mousedown', (e) => e.preventDefault());
     suggestInsertBtn.addEventListener('click', (e) => {
@@ -327,7 +370,7 @@
     });
   }
 
-  function askTranscription(transcription, uncertainWords) {
+  function askTranscription(transcription, uncertainWords, audioBlob) {
     return new Promise((resolve) => {
       if (!transcriptModal || !transcriptEdit) {
         resolve(transcription);
@@ -365,19 +408,65 @@
           onCancel();
         }
       }
+
+      transcriptConfirmBtn?.addEventListener('click', onConfirm);
+      transcriptCancelBtn?.addEventListener('click', onCancel);
+      transcriptEdit.addEventListener('keydown', onKeydown);
+
+      const replayBtn = document.getElementById('transcript-replay');
+      let audioUrl = null;
+      let audioEl = null;
+      let onReplayClick = null;
+      let onReplayPlay = null;
+      let onReplayPause = null;
+      try {
+        if (replayBtn && audioBlob) {
+          audioUrl = URL.createObjectURL(audioBlob);
+          audioEl = new Audio(audioUrl);
+          replayBtn.classList.remove('hidden');
+          onReplayClick = () => {
+            if (audioEl.paused) {
+              audioEl.currentTime = 0;
+              audioEl.play().catch((error) => console.error('Replay error:', error));
+            } else {
+              audioEl.pause();
+            }
+          };
+          onReplayPlay = () => {
+            replayBtn.innerHTML = '&#10074;&#10074; Pausar';
+          };
+          onReplayPause = () => {
+            replayBtn.innerHTML = '&#9654; Escuchar audio';
+          };
+          audioEl.addEventListener('play', onReplayPlay);
+          audioEl.addEventListener('pause', onReplayPause);
+          audioEl.addEventListener('ended', onReplayPause);
+          replayBtn.addEventListener('click', onReplayClick);
+        } else if (replayBtn) {
+          replayBtn.classList.add('hidden');
+        }
+      } catch (error) {
+        console.error('Replay setup error:', error);
+      }
+
       function cleanup() {
         transcriptConfirmBtn?.removeEventListener('click', onConfirm);
         transcriptCancelBtn?.removeEventListener('click', onCancel);
         transcriptEdit.removeEventListener('keydown', onKeydown);
+        if (replayBtn && audioEl && onReplayClick && onReplayPlay && onReplayPause) {
+          audioEl.pause();
+          audioEl.removeEventListener('play', onReplayPlay);
+          audioEl.removeEventListener('pause', onReplayPause);
+          audioEl.removeEventListener('ended', onReplayPause);
+          replayBtn.removeEventListener('click', onReplayClick);
+        }
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
         hideSuggestPop();
         currentDoubtSpans = [];
         transcriptModal.classList.add('hidden');
         transcriptEdit.blur();
       }
 
-      transcriptConfirmBtn?.addEventListener('click', onConfirm);
-      transcriptCancelBtn?.addEventListener('click', onCancel);
-      transcriptEdit.addEventListener('keydown', onKeydown);
       transcriptEdit.focus();
       const range = document.createRange();
       range.selectNodeContents(transcriptEdit);
@@ -434,7 +523,7 @@
 
       // Confirm/edit transcription (doubtful words highlighted)
       setStatusLabel('Revisa tu transcripción');
-      const finalText = await askTranscription(data.transcription, data.uncertainWords);
+      const finalText = await askTranscription(data.transcription, data.uncertainWords, audioBlob);
       if (finalText === null) {
         if (status) status.textContent = 'Mensaje descartado';
         clearTimer();
@@ -709,7 +798,7 @@
     border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 14px;
     padding: 1.75rem;
-    width: min(680px, 100%);
+    width: min(920px, 100%);
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
     display: flex;
     flex-direction: column;
@@ -733,12 +822,12 @@
     padding: 0.85rem;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
-    font-size: 14pt;
+    font-size: 18pt;
     line-height: 1.6;
     background: var(--background);
     color: var(--text);
     overflow-y: auto;
-    max-height: 240px;
+    max-height: 320px;
     cursor: text;
   }
 
@@ -754,9 +843,9 @@
     border: 1px solid rgba(245, 158, 11, 0.55);
     border-bottom: 2px solid #f59e0b;
     border-radius: 7px;
-    padding: 2px 8px;
+    padding: 1px 4px;
     margin: 0 2px;
-    font-size: 13.5pt;
+    font-size: 17.5pt;
     line-height: 1.35;
     color: var(--text);
     cursor: help;
@@ -809,6 +898,21 @@
     justify-content: flex-end;
     gap: 0.5rem;
     margin-top: 0.5rem;
+  }
+
+  .transcript-btn.replay {
+    margin-right: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .transcript-btn.replay:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(59, 130, 246, 0.08);
+    box-shadow: none;
+    transform: none;
   }
 
   .transcript-btn {

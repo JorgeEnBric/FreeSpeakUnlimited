@@ -5,7 +5,7 @@ import { WHISPER_CLI, WHISPER_BIN_DIR, WHISPER_MODEL, findLlamaCli, getLlamaBinD
 
 const TEMP_DIR = join(process.cwd(), 'temp');
 
-const UNCERTAIN_WORD_THRESHOLD = 0.90;
+const UNCERTAIN_WORD_THRESHOLD = 0.94;
 
 interface WhisperToken {
   text: string;
