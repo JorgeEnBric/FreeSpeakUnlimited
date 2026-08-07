@@ -17,6 +17,18 @@
     <p id="status" class="status">Click to start recording</p>
     <button id="cancel-btn" class="cancel-button hidden" aria-label="Cancel recording">Cancel</button>
   </div>
+
+  <div id="transcript-modal" class="transcript-modal hidden">
+    <div class="transcript-box">
+      <h3 class="transcript-title">Tu mensaje</h3>
+      <p class="transcript-hint">Las palabras resaltadas son las que el modelo no escuchó con seguridad. Corrígelas con el teclado y presiona Enter para enviar.</p>
+      <div id="transcript-edit" class="transcript-edit" contenteditable="true" role="textbox" aria-multiline="false" spellcheck="false"></div>
+      <div class="transcript-actions">
+        <button id="transcript-cancel" class="transcript-btn ghost">Descartar</button>
+        <button id="transcript-confirm" class="transcript-btn">Enviar</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -129,6 +141,86 @@
     }
   }
 
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function normalizeWord(word) {
+    return String(word).toLowerCase().replace(/[^a-z']/g, '');
+  }
+
+  function highlightTranscription(text, uncertainWords) {
+    const uncertain = new Set((uncertainWords || []).map(normalizeWord));
+    return String(text)
+      .split(/(\s+)/)
+      .map((part) => {
+        if (!/\S/.test(part)) return escapeHtml(part);
+        const clean = normalizeWord(part);
+        if (clean && uncertain.has(clean)) {
+          return `<span class="doubt">${escapeHtml(part)}</span>`;
+        }
+        return escapeHtml(part);
+      })
+      .join('');
+  }
+
+  const transcriptModal = document.getElementById('transcript-modal');
+  const transcriptEdit = document.getElementById('transcript-edit');
+  const transcriptConfirmBtn = document.getElementById('transcript-confirm');
+  const transcriptCancelBtn = document.getElementById('transcript-cancel');
+
+  function askTranscription(transcription, uncertainWords) {
+    return new Promise((resolve) => {
+      if (!transcriptModal || !transcriptEdit) {
+        resolve(transcription);
+        return;
+      }
+      transcriptEdit.innerHTML = highlightTranscription(transcription, uncertainWords);
+      transcriptModal.classList.remove('hidden');
+
+      function onConfirm() {
+        cleanup();
+        resolve(transcriptEdit.textContent.trim());
+      }
+      function onCancel() {
+        cleanup();
+        resolve(null);
+      }
+      function onKeydown(event) {
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          onConfirm();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          onCancel();
+        }
+      }
+      function cleanup() {
+        transcriptConfirmBtn?.removeEventListener('click', onConfirm);
+        transcriptCancelBtn?.removeEventListener('click', onCancel);
+        transcriptEdit.removeEventListener('keydown', onKeydown);
+        transcriptModal.classList.add('hidden');
+        transcriptEdit.blur();
+      }
+
+      transcriptConfirmBtn?.addEventListener('click', onConfirm);
+      transcriptCancelBtn?.addEventListener('click', onCancel);
+      transcriptEdit.addEventListener('keydown', onKeydown);
+      transcriptEdit.focus();
+      const range = document.createRange();
+      range.selectNodeContents(transcriptEdit);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+  }
+
   async function processAudio(audioBlob) {
     const startTime = Date.now();
     let timerEl = null;
@@ -173,7 +265,15 @@
         return;
       }
 
-      addMessage('user', data.transcription);
+      // Confirm/edit transcription (doubtful words highlighted)
+      setStatusLabel('Revisa tu transcripción');
+      const finalText = await askTranscription(data.transcription, data.uncertainWords);
+      if (finalText === null) {
+        if (status) status.textContent = 'Mensaje descartado';
+        clearTimer();
+        return;
+      }
+      addMessage('user', finalText);
 
       // Phase 2: Model response (streaming TTS)
       setStatusLabel('Pensando una respuesta');
@@ -183,7 +283,7 @@
         const chatRes = await fetch('/api/chat-tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: data.transcription, startTime }),
+          body: JSON.stringify({ text: finalText, startTime }),
           signal: currentChatAbort.signal,
         });
 
@@ -418,6 +518,111 @@
   .cancel-button:hover {
     border-color: var(--recording);
     color: var(--recording);
+  }
+
+  .transcript-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+    backdrop-filter: blur(2px);
+  }
+
+  .transcript-modal.hidden {
+    display: none;
+  }
+
+  .transcript-box {
+    background: var(--surface);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 12px;
+    padding: 1.5rem;
+    width: min(560px, 100%);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .transcript-title {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--text);
+  }
+
+  .transcript-hint {
+    margin: 0;
+    font-size: 0.85rem;
+    color: var(--text-muted);
+  }
+
+  .transcript-edit {
+    min-height: 3.5rem;
+    padding: 0.75rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    font-size: 1rem;
+    line-height: 1.5;
+    background: var(--background);
+    color: var(--text);
+    overflow-y: auto;
+    max-height: 180px;
+    cursor: text;
+  }
+
+  .transcript-edit:focus {
+    outline: 2px solid var(--primary, #3b82f6);
+    outline-offset: -1px;
+    border-color: transparent;
+  }
+
+  :global(.transcript-edit .doubt) {
+    background: rgba(245, 158, 11, 0.25);
+    border-bottom: 2px dotted #f59e0b;
+    border-radius: 3px;
+    padding: 0 1px;
+    cursor: help;
+  }
+
+  .transcript-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .transcript-btn {
+    padding: 0.5rem 1.25rem;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+  }
+
+  .transcript-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+
+  .transcript-btn.ghost {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text);
+  }
+
+  .transcript-btn.ghost:hover {
+    border-color: var(--recording);
+    color: var(--recording);
+    background: rgba(220, 38, 38, 0.08);
+    box-shadow: none;
+    transform: none;
   }
 
   @keyframes pulse {
