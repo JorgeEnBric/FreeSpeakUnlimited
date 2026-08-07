@@ -707,9 +707,9 @@
     position: relative;
     background: var(--surface);
     border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 12px;
-    padding: 1.5rem;
-    width: min(560px, 100%);
+    border-radius: 14px;
+    padding: 1.75rem;
+    width: min(680px, 100%);
     box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
     display: flex;
     flex-direction: column;
@@ -724,21 +724,21 @@
 
   .transcript-hint {
     margin: 0;
-    font-size: 0.85rem;
+    font-size: 0.9rem;
     color: var(--text-muted);
   }
 
   .transcript-edit {
-    min-height: 3.5rem;
-    padding: 0.75rem;
+    min-height: 4rem;
+    padding: 0.85rem;
     border: 1px solid rgba(255, 255, 255, 0.1);
     border-radius: 8px;
-    font-size: 1rem;
-    line-height: 1.5;
+    font-size: 14pt;
+    line-height: 1.6;
     background: var(--background);
     color: var(--text);
     overflow-y: auto;
-    max-height: 180px;
+    max-height: 240px;
     cursor: text;
   }
 
@@ -749,11 +749,20 @@
   }
 
   :global(.transcript-edit .doubt) {
-    background: rgba(245, 158, 11, 0.25);
-    border-bottom: 2px dotted #f59e0b;
-    border-radius: 3px;
-    padding: 0 1px;
+    display: inline-block;
+    background: rgba(245, 158, 11, 0.16);
+    border: 1px solid rgba(245, 158, 11, 0.55);
+    border-bottom: 2px solid #f59e0b;
+    border-radius: 7px;
+    padding: 2px 8px;
+    margin: 0 2px;
+    font-size: 13.5pt;
+    line-height: 1.35;
+    color: var(--text);
     cursor: help;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    white-space: nowrap;
+    vertical-align: baseline;
   }
 
   .suggest-pop {
