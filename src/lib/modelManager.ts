@@ -1,9 +1,16 @@
 import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
-import { CONVERSATION_SYSTEM_PROMPT as SYSTEM_PROMPT } from './prompts';
+import { CONVERSATION_SYSTEM_PROMPT as SYSTEM_PROMPT, SUGGESTION_SYSTEM_PROMPT } from './prompts';
 import { WHISPER_CLI, WHISPER_BIN_DIR, WHISPER_MODEL, findLlamaCli, getLlamaBinDir, getGemmaModelPath } from './modelConfig';
 
 const TEMP_DIR = join(process.cwd(), 'temp');
+
+const UNCERTAIN_WORD_THRESHOLD = 0.94;
+
+interface WhisperToken {
+  text: string;
+  p?: number;
+}
 
 const FALLBACK_RESPONSES = [
   "That's great! Can you tell me more about that?",
@@ -22,11 +29,13 @@ export function checkModels() {
   };
 }
 
-async function runWhisper(audioPath: string, modelPath: string): Promise<string> {
+async function runWhisper(audioPath: string, modelPath: string): Promise<{ text: string; uncertainWords: string[] }> {
   const { execFile, execFileSync } = await import('child_process');
   const ffmpegPath = (await import('ffmpeg-static')).default;
   const wavPath = audioPath.replace('.webm', '.wav');
-  const txtPath = join(TEMP_DIR, `${basename(wavPath, '.wav')}.txt`);
+  const baseName = join(TEMP_DIR, basename(wavPath, '.wav'));
+  const txtPath = `${baseName}.txt`;
+  const jsonPath = `${baseName}.json`;
 
   if (!ffmpegPath) {
     throw new Error('ffmpeg-static binary not found');
@@ -44,12 +53,15 @@ async function runWhisper(audioPath: string, modelPath: string): Promise<string>
     });
   });
 
-  // Run whisper-cli synchronously
+  // Run whisper-cli synchronously (txt + full JSON with per-token probabilities)
   execFileSync(WHISPER_CLI, [
     '-m', modelPath,
     '-f', wavPath,
     '-otxt',
-    '-of', join(TEMP_DIR, basename(wavPath, '.wav')),
+    '-ojf',
+    '-of', baseName,
+    '-np',
+    '-nt',
   ], { timeout: 120000, cwd: WHISPER_BIN_DIR, stdio: 'pipe' });
   // Read result
   let text = '';
@@ -57,18 +69,70 @@ async function runWhisper(audioPath: string, modelPath: string): Promise<string>
     text = readFileSync(txtPath, 'utf8').trim();
   }
 
+  const uncertainWords = extractUncertainWords(jsonPath);
+
   // Cleanup
   try { unlinkSync(wavPath); } catch (_) {}
   try { unlinkSync(txtPath); } catch (_) {}
+  try { unlinkSync(jsonPath); } catch (_) {}
 
-  return text || mockTranscribe();
+  if (!text) {
+    return { text: mockTranscribe(), uncertainWords: [] };
+  }
+  return { text, uncertainWords };
+}
+
+function extractUncertainWords(jsonPath: string): string[] {
+  if (!existsSync(jsonPath)) return [];
+  let data: any;
+  try {
+    data = JSON.parse(readFileSync(jsonPath, 'utf8'));
+  } catch (error) {
+    console.error('Error parsing whisper JSON:', error);
+    return [];
+  }
+
+  const uncertainWords: string[] = [];
+  const segments = data?.transcription || [];
+  let currentWord = '';
+  let currentMinP = 1;
+
+  const flushWord = () => {
+    const clean = currentWord.trim().replace(/[^a-zA-Z']/g, '');
+    if (clean && currentMinP < UNCERTAIN_WORD_THRESHOLD) {
+      uncertainWords.push(clean.toLowerCase());
+    }
+    currentWord = '';
+    currentMinP = 1;
+  };
+
+  for (const segment of segments) {
+    const tokens: WhisperToken[] = segment?.tokens || [];
+    for (const token of tokens) {
+      const t = token?.text || '';
+      if (!t || t.trim() === '' || t.startsWith('[')) continue;
+
+      const hasLetter = /[a-zA-Z]/.test(t);
+      if (t.startsWith(' ')) {
+        flushWord();
+        currentWord = t.trim();
+        currentMinP = hasLetter ? (token.p ?? 1) : 1;
+      } else if (hasLetter) {
+        currentWord += t;
+        currentMinP = Math.min(currentMinP, token.p ?? 1);
+      }
+    }
+  }
+  flushWord();
+
+  return uncertainWords;
 }
 
 function mockTranscribe(): string {
   return "Hello, I am practicing my English speaking skills.";
 }
 
-export async function transcribeAudio(audioPath: string): Promise<string> {
+export async function transcribeAudio(audioPath: string): Promise<{ text: string; uncertainWords: string[] }> {
   const modelPath = WHISPER_MODEL;
   const status = checkModels();
 
@@ -79,8 +143,7 @@ export async function transcribeAudio(audioPath: string): Promise<string> {
     throw new Error('whisper-cli.exe not found at ' + WHISPER_CLI);
   }
 
-  const text = await runWhisper(audioPath, modelPath);
-  return text || mockTranscribe();
+  return runWhisper(audioPath, modelPath);
 }
 
 export async function generateResponse(prompt: string): Promise<string> {
@@ -151,6 +214,75 @@ export async function generateResponse(prompt: string): Promise<string> {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('Gemma inference error:', msg);
     return `Gemma error: ${msg}`;
+  }
+}
+
+function cleanSuggestion(raw: string): string | null {
+  if (!raw) return null;
+  let word = raw.trim();
+  word = word.replace(/^["'`]+|["'`]+$/g, '');
+  word = word.replace(/[.,!?;:]+$/g, '');
+  word = word.trim().split(/\s+/)[0] || '';
+  word = word.replace(/[^A-Za-z'-]/g, '');
+  if (!word) return null;
+  return word;
+}
+
+// Suggests a single word to fill the ___ placeholder in a sentence,
+// using the local Gemma model via llama-server (fallback: llama-cli).
+export async function suggestWord(sentence: string): Promise<string | null> {
+  const modelPath = getGemmaModelPath();
+  const status = checkModels();
+  if (!status.gemma) return null;
+
+  const { ensureStarted, isRunning, complete } = await import('./llamaServer');
+  try {
+    await ensureStarted();
+    if (isRunning()) {
+      const result = await complete(sentence, SUGGESTION_SYSTEM_PROMPT, { n_predict: 16, temperature: 0.2 });
+      const cleaned = cleanSuggestion(result ?? '');
+      if (cleaned) return cleaned;
+    }
+  } catch (error) {
+    console.error('Gemma suggestion error (server):', error);
+  }
+
+  // Fallback to llama-cli.exe
+  if (!status.llamaCli) return null;
+  try {
+    const { execFileSync } = await import('child_process');
+    const llamaBinDir = getLlamaBinDir();
+    const ts = Date.now();
+    const outFile = join(TEMP_DIR, `suggest-${ts}.txt`);
+
+    execFileSync(findLlamaCli(), [
+      '-m', modelPath,
+      '-sys', SUGGESTION_SYSTEM_PROMPT,
+      '-p', sentence,
+      '-o', outFile,
+      '-n', '16',
+      '--temp', '0.2',
+      '--repeat-penalty', '1.0',
+      '--single-turn',
+      '--simple-io',
+    ], {
+      timeout: 120000,
+      cwd: llamaBinDir,
+      env: { ...process.env, PATH: `${llamaBinDir};${process.env.PATH}` },
+      stdio: 'pipe',
+    });
+
+    let response = '';
+    if (existsSync(outFile)) {
+      response = readFileSync(outFile, 'utf8').trim();
+    }
+    try { unlinkSync(outFile); } catch (_) {}
+
+    return cleanSuggestion(response);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Gemma suggestion error (cli):', msg);
+    return null;
   }
 }
 

@@ -39,7 +39,7 @@ export const POST: APIRoute = async () => {
     // Try server first (persistent, keeps system prompt cached)
     await ensureStarted();
     if (isRunning()) {
-      const result = await complete(userPrompt, systemPrompt, { n_predict: 70 });
+      const result = await complete(userPrompt, systemPrompt, { n_predict: 150 });
       if (result) raw = result;
     }
 
@@ -57,7 +57,7 @@ export const POST: APIRoute = async () => {
         '-sys', systemPrompt,
         '-p', userPrompt,
         '-o', outFile,
-        '-n', '70',
+        '-n', '150',
         '--temp', '0.3',
         '--repeat-penalty', '1.0',
         '--single-turn',

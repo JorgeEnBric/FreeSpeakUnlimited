@@ -17,6 +17,23 @@
     <p id="status" class="status">Click to start recording</p>
     <button id="cancel-btn" class="cancel-button hidden" aria-label="Cancel recording">Cancel</button>
   </div>
+
+  <div id="transcript-modal" class="transcript-modal hidden">
+    <div class="transcript-box">
+      <h3 class="transcript-title">Tu mensaje</h3>
+      <p class="transcript-hint">Las palabras resaltadas son las que el modelo no escuchó con seguridad. Bórralas para ver una sugerencia o corrígelas con el teclado, y presiona Enter para enviar.</p>
+      <div id="transcript-edit" class="transcript-edit" contenteditable="true" role="textbox" aria-multiline="false" spellcheck="false"></div>
+      <div id="suggest-pop" class="suggest-pop hidden">
+        <span class="suggest-label">Sugerencia:</span>
+        <button id="suggest-insert" class="suggest-insert" type="button">…</button>
+      </div>
+      <div class="transcript-actions">
+        <button id="transcript-replay" class="transcript-btn ghost replay" type="button" aria-label="Escuchar tu audio">&#9654; Escuchar audio</button>
+        <button id="transcript-cancel" class="transcript-btn ghost" type="button">Descartar</button>
+        <button id="transcript-confirm" class="transcript-btn" type="button">Enviar</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -129,6 +146,337 @@
     }
   }
 
+  function escapeHtml(text) {
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function normalizeWord(word) {
+    return String(word).toLowerCase().replace(/[^a-z']/g, '');
+  }
+
+  function highlightTranscription(text, uncertainWords) {
+    const uncertain = new Set((uncertainWords || []).map(normalizeWord));
+    return String(text)
+      .split(/(\s+)/)
+      .map((part) => {
+        if (!/\S/.test(part)) return escapeHtml(part);
+        const clean = normalizeWord(part);
+        if (clean && uncertain.has(clean)) {
+          return `<span class="doubt" data-word="${escapeHtml(clean)}">${escapeHtml(part)}</span>`;
+        }
+        return escapeHtml(part);
+      })
+      .join('');
+  }
+
+  const transcriptModal = document.getElementById('transcript-modal');
+  const transcriptEdit = document.getElementById('transcript-edit');
+  const transcriptConfirmBtn = document.getElementById('transcript-confirm');
+  const transcriptCancelBtn = document.getElementById('transcript-cancel');
+  const suggestPop = document.getElementById('suggest-pop');
+  const suggestInsertBtn = document.getElementById('suggest-insert');
+
+  let currentDoubtSpans = [];
+  let suggestActive = false;
+  let suggestedWord = '';
+  let suggestionReqId = 0;
+  let suppressInput = false;
+
+  function getCaretOffset() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    if (!transcriptEdit.contains(range.startContainer)) return null;
+    const pre = range.cloneRange();
+    pre.selectNodeContents(transcriptEdit);
+    pre.setEnd(range.startContainer, range.startOffset);
+    return pre.toString().length;
+  }
+
+  function setCaretToOffset(offset) {
+    const sel = window.getSelection();
+    if (!sel) return;
+    const node = transcriptEdit;
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
+    let current = 0;
+    while (walker.nextNode()) {
+      const textNode = walker.currentNode;
+      const len = textNode.textContent.length;
+      if (current + len >= offset) {
+        const range = document.createRange();
+        range.setStart(textNode, Math.min(offset - current, len));
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return;
+      }
+      current += len;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function placeSuggestPop() {
+    if (!suggestPop) return;
+    const box = transcriptModal?.querySelector('.transcript-box');
+    if (!box) return;
+    const sel = window.getSelection();
+    const rect = sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
+    const boxRect = box.getBoundingClientRect();
+    const popRect = suggestPop.getBoundingClientRect();
+    const actionsRow = box.querySelector('.transcript-actions');
+    const actionsTop = actionsRow ? actionsRow.getBoundingClientRect().top : boxRect.bottom;
+    let left = (rect ? rect.left : boxRect.left) - boxRect.left;
+    let top = (rect ? rect.bottom : boxRect.top) - boxRect.top + 8;
+    const maxLeft = boxRect.width - 180;
+    if (left < 8) left = 8;
+    if (left > maxLeft) left = maxLeft;
+    if (top + popRect.height + 8 > actionsTop - boxRect.top) {
+      top = Math.max(8, (rect ? rect.top : boxRect.top) - boxRect.top - popRect.height - 8);
+    }
+    suggestPop.style.left = `${left}px`;
+    suggestPop.style.top = `${top}px`;
+  }
+
+  function hideSuggestPop() {
+    suggestActive = false;
+    suggestedWord = '';
+    if (suggestPop) {
+      suggestPop.classList.add('hidden');
+      const btn = document.getElementById('suggest-insert');
+      if (btn) btn.textContent = '…';
+    }
+  }
+
+  function insertSuggestedWord() {
+    if (!suggestActive || !suggestedWord) return;
+    suppressInput = true;
+    try {
+      document.execCommand('insertText', false, suggestedWord);
+    } catch (e) {
+      console.error('Error inserting suggestion:', e);
+    }
+    suppressInput = false;
+    hideSuggestPop();
+  }
+
+  function onTranscriptInput() {
+    if (suppressInput) return;
+    if (suggestActive) {
+      hideSuggestPop();
+      return;
+    }
+    const removed = currentDoubtSpans.find((s) => !s.isConnected || !s.textContent.trim());
+    if (!removed) return;
+    currentDoubtSpans = currentDoubtSpans.filter((s) => s !== removed);
+
+    const offset = getCaretOffset();
+    if (offset === null) return;
+    if (removed.isConnected) removed.remove();
+    setCaretToOffset(offset);
+
+    const text = transcriptEdit?.textContent ?? '';
+    const before = text[offset - 1];
+    const after = text[offset];
+    const isGap = (before === undefined || /\s/.test(before)) && (after === undefined || /\s/.test(after));
+    if (!isGap) return;
+
+    const withBlank = text.slice(0, offset) + '___' + text.slice(offset);
+    suggestActive = true;
+    suggestedWord = '';
+    suggestionReqId++;
+    const reqId = suggestionReqId;
+    if (suggestPop) {
+      suggestPop.classList.remove('hidden');
+      const btn = document.getElementById('suggest-insert');
+      if (btn) btn.textContent = '…';
+    }
+    placeSuggestPop();
+
+    fetch('/api/suggest-word', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sentence: withBlank }),
+    })
+      .then((res) => res.json())
+      .then((data) => {
+        if (reqId !== suggestionReqId || !suggestActive) return;
+        const word = (data && typeof data.word === 'string' ? data.word : '').trim();
+        if (!word) {
+          hideSuggestPop();
+          return;
+        }
+        suggestedWord = word;
+        const btn = document.getElementById('suggest-insert');
+        if (btn) btn.textContent = word;
+        placeSuggestPop();
+      })
+      .catch((error) => {
+        console.error('Suggestion error:', error);
+        if (reqId === suggestionReqId) hideSuggestPop();
+      });
+  }
+
+  function placeCaretAtPoint(x, y) {
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    let range = null;
+    if (document.caretRangeFromPoint) {
+      range = document.caretRangeFromPoint(x, y);
+    } else if (document.caretPositionFromPoint) {
+      const pos = document.caretPositionFromPoint(x, y);
+      if (pos) {
+        range = document.createRange();
+        range.setStart(pos.offsetNode, pos.offset);
+        range.collapse(true);
+      }
+    }
+    if (range) sel.addRange(range);
+  }
+
+  if (transcriptEdit) transcriptEdit.addEventListener('input', onTranscriptInput);
+  if (transcriptEdit) {
+    transcriptEdit.addEventListener('click', (e) => {
+      const span = e.target.closest('.doubt');
+      if (!span || !transcriptEdit.contains(span)) return;
+      e.preventDefault();
+      const range = document.createRange();
+      range.selectNodeContents(span);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+    transcriptEdit.addEventListener('dblclick', (e) => {
+      const span = e.target.closest('.doubt');
+      if (!span || !transcriptEdit.contains(span)) return;
+      e.preventDefault();
+      placeCaretAtPoint(e.clientX, e.clientY);
+    });
+  }
+  if (suggestInsertBtn) {
+    suggestInsertBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    suggestInsertBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      insertSuggestedWord();
+    });
+  }
+
+  function askTranscription(transcription, uncertainWords, audioBlob) {
+    return new Promise((resolve) => {
+      if (!transcriptModal || !transcriptEdit) {
+        resolve(transcription);
+        return;
+      }
+      transcriptEdit.innerHTML = highlightTranscription(transcription, uncertainWords);
+      currentDoubtSpans = Array.from(transcriptEdit.querySelectorAll('.doubt'));
+      hideSuggestPop();
+      transcriptModal.classList.remove('hidden');
+
+      function onConfirm() {
+        cleanup();
+        resolve(transcriptEdit.textContent.trim());
+      }
+      function onCancel() {
+        cleanup();
+        resolve(null);
+      }
+      function onKeydown(event) {
+        if (suggestActive && event.key === 'Tab') {
+          event.preventDefault();
+          insertSuggestedWord();
+          return;
+        }
+        if (suggestActive && event.key === 'Escape') {
+          event.preventDefault();
+          hideSuggestPop();
+          return;
+        }
+        if (event.key === 'Enter') {
+          event.preventDefault();
+          onConfirm();
+        } else if (event.key === 'Escape') {
+          event.preventDefault();
+          onCancel();
+        }
+      }
+
+      transcriptConfirmBtn?.addEventListener('click', onConfirm);
+      transcriptCancelBtn?.addEventListener('click', onCancel);
+      transcriptEdit.addEventListener('keydown', onKeydown);
+
+      const replayBtn = document.getElementById('transcript-replay');
+      let audioUrl = null;
+      let audioEl = null;
+      let onReplayClick = null;
+      let onReplayPlay = null;
+      let onReplayPause = null;
+      try {
+        if (replayBtn && audioBlob) {
+          audioUrl = URL.createObjectURL(audioBlob);
+          audioEl = new Audio(audioUrl);
+          replayBtn.classList.remove('hidden');
+          onReplayClick = () => {
+            if (audioEl.paused) {
+              audioEl.currentTime = 0;
+              audioEl.play().catch((error) => console.error('Replay error:', error));
+            } else {
+              audioEl.pause();
+            }
+          };
+          onReplayPlay = () => {
+            replayBtn.innerHTML = '&#10074;&#10074; Pausar';
+          };
+          onReplayPause = () => {
+            replayBtn.innerHTML = '&#9654; Escuchar audio';
+          };
+          audioEl.addEventListener('play', onReplayPlay);
+          audioEl.addEventListener('pause', onReplayPause);
+          audioEl.addEventListener('ended', onReplayPause);
+          replayBtn.addEventListener('click', onReplayClick);
+        } else if (replayBtn) {
+          replayBtn.classList.add('hidden');
+        }
+      } catch (error) {
+        console.error('Replay setup error:', error);
+      }
+
+      function cleanup() {
+        transcriptConfirmBtn?.removeEventListener('click', onConfirm);
+        transcriptCancelBtn?.removeEventListener('click', onCancel);
+        transcriptEdit.removeEventListener('keydown', onKeydown);
+        if (replayBtn && audioEl && onReplayClick && onReplayPlay && onReplayPause) {
+          audioEl.pause();
+          audioEl.removeEventListener('play', onReplayPlay);
+          audioEl.removeEventListener('pause', onReplayPause);
+          audioEl.removeEventListener('ended', onReplayPause);
+          replayBtn.removeEventListener('click', onReplayClick);
+        }
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        hideSuggestPop();
+        currentDoubtSpans = [];
+        transcriptModal.classList.add('hidden');
+        transcriptEdit.blur();
+      }
+
+      transcriptEdit.focus();
+      const range = document.createRange();
+      range.selectNodeContents(transcriptEdit);
+      range.collapse(false);
+      const sel = window.getSelection();
+      sel.removeAllRanges();
+      sel.addRange(range);
+    });
+  }
+
   async function processAudio(audioBlob) {
     const startTime = Date.now();
     let timerEl = null;
@@ -173,7 +521,15 @@
         return;
       }
 
-      addMessage('user', data.transcription);
+      // Confirm/edit transcription (doubtful words highlighted)
+      setStatusLabel('Revisa tu transcripción');
+      const finalText = await askTranscription(data.transcription, data.uncertainWords, audioBlob);
+      if (finalText === null) {
+        if (status) status.textContent = 'Mensaje descartado';
+        clearTimer();
+        return;
+      }
+      addMessage('user', finalText);
 
       // Phase 2: Model response (streaming TTS)
       setStatusLabel('Pensando una respuesta');
@@ -183,7 +539,7 @@
         const chatRes = await fetch('/api/chat-tts', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ text: data.transcription, startTime }),
+          body: JSON.stringify({ text: finalText, startTime }),
           signal: currentChatAbort.signal,
         });
 
@@ -418,6 +774,175 @@
   .cancel-button:hover {
     border-color: var(--recording);
     color: var(--recording);
+  }
+
+  .transcript-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    padding: 1rem;
+    backdrop-filter: blur(2px);
+  }
+
+  .transcript-modal.hidden {
+    display: none;
+  }
+
+  .transcript-box {
+    position: relative;
+    background: var(--surface);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 14px;
+    padding: 1.75rem;
+    width: min(920px, 100%);
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+  }
+
+  .transcript-title {
+    margin: 0;
+    font-size: 1.1rem;
+    color: var(--text);
+  }
+
+  .transcript-hint {
+    margin: 0;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+  }
+
+  .transcript-edit {
+    min-height: 4rem;
+    padding: 0.85rem;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    font-size: 18pt;
+    line-height: 1.6;
+    background: var(--background);
+    color: var(--text);
+    overflow-y: auto;
+    max-height: 320px;
+    cursor: text;
+  }
+
+  .transcript-edit:focus {
+    outline: 2px solid var(--primary, #3b82f6);
+    outline-offset: -1px;
+    border-color: transparent;
+  }
+
+  :global(.transcript-edit .doubt) {
+    display: inline-block;
+    background: rgba(245, 158, 11, 0.16);
+    border: 1px solid rgba(245, 158, 11, 0.55);
+    border-bottom: 2px solid #f59e0b;
+    border-radius: 7px;
+    padding: 1px 4px;
+    margin: 0 2px;
+    font-size: 17.5pt;
+    line-height: 1.35;
+    color: var(--text);
+    cursor: help;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+    white-space: nowrap;
+    vertical-align: baseline;
+  }
+
+  .suggest-pop {
+    position: absolute;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--surface);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 8px;
+    padding: 0.3rem 0.6rem;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    z-index: 20;
+  }
+
+  .suggest-pop.hidden {
+    display: none;
+  }
+
+  .suggest-label {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+
+  .suggest-insert {
+    padding: 0.25rem 0.75rem;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.85rem;
+    transition: all 0.2s ease;
+  }
+
+  .suggest-insert:hover {
+    filter: brightness(1.1);
+    transform: translateY(-1px);
+  }
+
+  .transcript-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+  }
+
+  .transcript-btn.replay {
+    margin-right: auto;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .transcript-btn.replay:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(59, 130, 246, 0.08);
+    box-shadow: none;
+    transform: none;
+  }
+
+  .transcript-btn {
+    padding: 0.5rem 1.25rem;
+    border: none;
+    border-radius: 6px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: #fff;
+    cursor: pointer;
+    font-size: 0.9rem;
+    transition: all 0.2s ease;
+  }
+
+  .transcript-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+
+  .transcript-btn.ghost {
+    background: transparent;
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    color: var(--text);
+  }
+
+  .transcript-btn.ghost:hover {
+    border-color: var(--recording);
+    color: var(--recording);
+    background: rgba(220, 38, 38, 0.08);
+    box-shadow: none;
+    transform: none;
   }
 
   @keyframes pulse {

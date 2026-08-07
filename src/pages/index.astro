@@ -59,6 +59,13 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 
   <div id="ctx-menu" class="ctx-menu" style="display:none">
     <button id="ctx-add-expression" class="ctx-item">Guardar en Nuevas Expresiones</button>
+    <button id="ctx-translate" class="ctx-item">Traducir al español</button>
+  </div>
+
+  <div id="translation-popup" class="translation-popup" style="display:none">
+    <button id="translation-close" class="translation-close" title="Cerrar">×</button>
+    <div class="translation-label">Traducción</div>
+    <div id="translation-content" class="translation-content"></div>
   </div>
 
 <script>
@@ -306,17 +313,35 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
   });
 
-  // Custom context menu on chat messages: add selected text to NewExpressions
+  // Custom context menu on chat messages: add selected text to NewExpressions or translate it
   const chatDisplay = document.getElementById('chat');
   const contextMenu = document.getElementById('ctx-menu');
+  const translationPopup = document.getElementById('translation-popup');
+  const translationContent = document.getElementById('translation-content');
   let contextMenuItem = null;
 
-  chatDisplay?.addEventListener('contextmenu', async (event) => {
+  function positionPopup(element: HTMLElement, clientX: number, clientY: number) {
+    const rect = element.getBoundingClientRect();
+    const margin = 8;
+    let left = clientX;
+    let top = clientY + margin;
+
+    if (left + rect.width > window.innerWidth - margin) {
+      left = Math.max(margin, window.innerWidth - rect.width - margin);
+    }
+    if (top + rect.height > window.innerHeight - margin) {
+      top = Math.max(margin, clientY - rect.height - margin);
+    }
+    element.style.left = `${left}px`;
+    element.style.top = `${top}px`;
+  }
+
+  chatDisplay?.addEventListener('contextmenu', (event) => {
     const selection = window.getSelection()?.toString().trim();
     if (!selection) return;
 
     event.preventDefault();
-    contextMenuItem = { expression: selection };
+    contextMenuItem = { expression: selection, text: selection, x: event.clientX, y: event.clientY };
 
     if (contextMenu) {
       contextMenu.style.left = `${event.clientX}px`;
@@ -325,12 +350,32 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
   });
 
-  document.addEventListener('click', () => {
+  function hideContextMenu() {
     if (contextMenu) contextMenu.style.display = 'none';
+  }
+
+  function hideTranslationPopup() {
+    if (translationPopup) {
+      translationPopup.style.display = 'none';
+      if (translationContent) translationContent.textContent = '';
+    }
+  }
+
+  document.addEventListener('click', (event) => {
+    hideContextMenu();
+    if (
+      translationPopup &&
+      !translationPopup.contains(event.target as Node) &&
+      !(event.target as HTMLElement).closest('#ctx-translate')
+    ) {
+      hideTranslationPopup();
+    }
   });
 
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && contextMenu) contextMenu.style.display = 'none';
+    if (event.key !== 'Escape') return;
+    hideContextMenu();
+    hideTranslationPopup();
   });
 
   document.getElementById('ctx-add-expression')?.addEventListener('click', async () => {
@@ -353,6 +398,41 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       console.error('Error saving expression:', error);
     }
   });
+
+  // Translate selected text to Spanish and show a small cloud popup
+  document.getElementById('ctx-translate')?.addEventListener('click', async () => {
+    hideContextMenu();
+    if (!contextMenuItem || !translationPopup || !translationContent) return;
+
+    const { text, x, y } = contextMenuItem;
+    if (!text) return;
+
+    positionPopup(translationPopup, x, y);
+
+    translationPopup.style.display = 'block';
+    translationContent.textContent = 'Traduciendo…';
+
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.error) {
+        translationContent.textContent = `Error: ${data.error}`;
+      } else if (data.translated) {
+        translationContent.textContent = data.translated;
+      } else {
+        translationContent.textContent = 'No se pudo traducir el texto.';
+      }
+    } catch (error) {
+      console.error('Error translating text:', error);
+      translationContent.textContent = 'Error de conexión al traducir.';
+    }
+  });
+
+  document.getElementById('translation-close')?.addEventListener('click', hideTranslationPopup);
 </script>
 </Layout>
 
@@ -812,5 +892,80 @@ import AudioRecorder from '../components/AudioRecorder.astro';
   .ctx-item:hover {
     background: rgba(59, 130, 246, 0.15);
     color: var(--primary);
+  }
+
+  .translation-popup {
+    position: fixed;
+    z-index: 9998;
+    background: var(--surface-light);
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 10px;
+    padding: 0.6rem 0.75rem;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.45);
+    max-width: 320px;
+    min-width: 160px;
+    color: var(--text);
+  }
+
+  .translation-popup::before {
+    content: '';
+    position: absolute;
+    top: -8px;
+    left: 18px;
+    width: 0;
+    height: 0;
+    border-left: 8px solid transparent;
+    border-right: 8px solid transparent;
+    border-bottom: 8px solid rgba(255,255,255,0.15);
+  }
+
+  .translation-popup::after {
+    content: '';
+    position: absolute;
+    top: -6px;
+    left: 19px;
+    width: 0;
+    height: 0;
+    border-left: 7px solid transparent;
+    border-right: 7px solid transparent;
+    border-bottom: 7px solid var(--surface-light);
+  }
+
+  .translation-close {
+    position: absolute;
+    top: 4px;
+    right: 6px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 1rem;
+    line-height: 1;
+    cursor: pointer;
+    border-radius: 50%;
+    transition: all 0.15s;
+  }
+
+  .translation-close:hover {
+    color: var(--text);
+    background: rgba(255,255,255,0.1);
+  }
+
+  .translation-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--primary);
+    margin-bottom: 0.3rem;
+    padding-right: 1.2rem;
+  }
+
+  .translation-content {
+    font-size: 0.85rem;
+    line-height: 1.45;
+    word-break: break-word;
+    white-space: pre-wrap;
   }
 </style>

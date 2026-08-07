@@ -51,16 +51,12 @@ export const POST: APIRoute = async ({ request }) => {
 
     try {
       const t0 = Date.now();
-      const transcription = await transcribeAudio(audioPath);
+      const { text: transcription, uncertainWords } = await transcribeAudio(audioPath);
       const whisperMs = Date.now() - t0;
       console.log(`Hora inicio: ${fmtDateTime(new Date(startTime))}`);
       console.log(`Tiempo en Whisper: ${Math.round(whisperMs / 1000)} segundos`);
 
-      const { initDB, insertMessage } = await import('../../lib/database');
-      await initDB();
-      await insertMessage(transcription);
-
-      return new Response(JSON.stringify({ transcription }), {
+      return new Response(JSON.stringify({ transcription, uncertainWords }), {
         status: 200,
         headers: { 'Content-Type': 'application/json' },
       });

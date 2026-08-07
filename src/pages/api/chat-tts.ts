@@ -24,6 +24,10 @@ export const POST: APIRoute = async ({ request }) => {
 
     checkModels();
 
+    const { initDB, insertMessage } = await import('../../lib/database');
+    await initDB();
+    await insertMessage(text);
+
     const encoder = new TextEncoder();
     const t0 = Date.now();
     let streamClosed = false;

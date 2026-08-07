@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
-import { CONVERSATION_SYSTEM_PROMPT, CORRECTIONS_SYSTEM_PROMPT } from './prompts';
+import { CONVERSATION_SYSTEM_PROMPT, CORRECTIONS_SYSTEM_PROMPT, SUGGESTION_SYSTEM_PROMPT } from './prompts';
 import { LLAMA_SERVER_EXE, LLAMA_SERVER_BIN_DIR, getGemmaModelPath } from './modelConfig';
 
 const HOST = '127.0.0.1';
@@ -55,6 +55,7 @@ export function ensureStarted(): Promise<void> {
       '--port', String(PORT),
       '-c', '4096',
       '--parallel', '1',
+      '--cache-reuse', '256',
     ], {
       cwd: LLAMA_SERVER_BIN_DIR,
       stdio: 'pipe',
@@ -101,6 +102,7 @@ export async function complete(
         max_tokens: options?.n_predict ?? 1000,
         temperature: options?.temperature ?? 0.3,
         repeat_penalty: options?.repeat_penalty ?? 1.0,
+        cache_prompt: true,
       }),
     });
     if (!res.ok) return null;
@@ -130,6 +132,7 @@ export async function* completeStream(
       temperature: options?.temperature ?? 0.3,
       repeat_penalty: options?.repeat_penalty ?? 1.0,
       stream: true,
+      cache_prompt: true,
     }),
   });
   if (!res.ok || !res.body) return;
@@ -200,6 +203,7 @@ export async function warmup(): Promise<void> {
       if (isRunning()) {
         await primeCache(CONVERSATION_SYSTEM_PROMPT);
         await primeCache(CORRECTIONS_SYSTEM_PROMPT);
+        await primeCache(SUGGESTION_SYSTEM_PROMPT);
       }
     } finally {
       warmupState = 'done';
