@@ -1,6 +1,6 @@
 import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
-import { CONVERSATION_SYSTEM_PROMPT as SYSTEM_PROMPT } from './prompts';
+import { CONVERSATION_SYSTEM_PROMPT as SYSTEM_PROMPT, SUGGESTION_SYSTEM_PROMPT } from './prompts';
 import { WHISPER_CLI, WHISPER_BIN_DIR, WHISPER_MODEL, findLlamaCli, getLlamaBinDir, getGemmaModelPath } from './modelConfig';
 
 const TEMP_DIR = join(process.cwd(), 'temp');
@@ -214,6 +214,75 @@ export async function generateResponse(prompt: string): Promise<string> {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('Gemma inference error:', msg);
     return `Gemma error: ${msg}`;
+  }
+}
+
+function cleanSuggestion(raw: string): string | null {
+  if (!raw) return null;
+  let word = raw.trim();
+  word = word.replace(/^["'`]+|["'`]+$/g, '');
+  word = word.replace(/[.,!?;:]+$/g, '');
+  word = word.trim().split(/\s+/)[0] || '';
+  word = word.replace(/[^A-Za-z'-]/g, '');
+  if (!word) return null;
+  return word;
+}
+
+// Suggests a single word to fill the ___ placeholder in a sentence,
+// using the local Gemma model via llama-server (fallback: llama-cli).
+export async function suggestWord(sentence: string): Promise<string | null> {
+  const modelPath = getGemmaModelPath();
+  const status = checkModels();
+  if (!status.gemma) return null;
+
+  const { ensureStarted, isRunning, complete } = await import('./llamaServer');
+  try {
+    await ensureStarted();
+    if (isRunning()) {
+      const result = await complete(sentence, SUGGESTION_SYSTEM_PROMPT, { n_predict: 16, temperature: 0.2 });
+      const cleaned = cleanSuggestion(result ?? '');
+      if (cleaned) return cleaned;
+    }
+  } catch (error) {
+    console.error('Gemma suggestion error (server):', error);
+  }
+
+  // Fallback to llama-cli.exe
+  if (!status.llamaCli) return null;
+  try {
+    const { execFileSync } = await import('child_process');
+    const llamaBinDir = getLlamaBinDir();
+    const ts = Date.now();
+    const outFile = join(TEMP_DIR, `suggest-${ts}.txt`);
+
+    execFileSync(findLlamaCli(), [
+      '-m', modelPath,
+      '-sys', SUGGESTION_SYSTEM_PROMPT,
+      '-p', sentence,
+      '-o', outFile,
+      '-n', '16',
+      '--temp', '0.2',
+      '--repeat-penalty', '1.0',
+      '--single-turn',
+      '--simple-io',
+    ], {
+      timeout: 120000,
+      cwd: llamaBinDir,
+      env: { ...process.env, PATH: `${llamaBinDir};${process.env.PATH}` },
+      stdio: 'pipe',
+    });
+
+    let response = '';
+    if (existsSync(outFile)) {
+      response = readFileSync(outFile, 'utf8').trim();
+    }
+    try { unlinkSync(outFile); } catch (_) {}
+
+    return cleanSuggestion(response);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('Gemma suggestion error (cli):', msg);
+    return null;
   }
 }
 
