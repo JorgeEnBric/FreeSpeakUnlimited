@@ -173,7 +173,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       if (data.analyzing && data.queueLength > 0) {
         updateStatusMessage(`Analizando... (${data.queueLength} en cola)`);
       } else if (data.analyzing) {
-        updateStatusMessage('Analizando correcciones...');
+        updateStatusMessage('Analizando tu frase');
       }
       return;
     }
@@ -187,7 +187,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     if (data.analyzing && data.queueLength > 0) {
       updateStatusMessage(`Analizando... (${data.queueLength} en cola)`);
     } else if (data.analyzing) {
-      updateStatusMessage('Analizando correcciones...');
+      updateStatusMessage('Analizando tu frase');
     } else {
       removeStatusMessage();
     }
