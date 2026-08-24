@@ -41,7 +41,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
         <div class="panel-divider"></div>
 
         <h3 class="expressions-title">Nuevas Expresiones</h3>
-        <p class="expressions-hint">Selecciona una frase en el chat y haz clic derecho para guardarla aquí</p>
+        <p class="expressions-hint">Selecciona texto en cualquier parte y haz clic derecho para guardarlo aquí</p>
         <div id="expressions-list" class="expressions-list">
           <p class="expressions-empty">Aún no hay expresiones guardadas</p>
         </div>
@@ -416,7 +416,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
   });
 
-  // Custom context menu on chat messages: add selected text to NewExpressions or translate it
+  // Custom context menu on any selected text (global, excluye #transcript-modal): add to NewExpressions or translate
   const chatDisplay = document.getElementById('chat');
   const contextMenu = document.getElementById('ctx-menu');
   const translationPopup = document.getElementById('translation-popup');
@@ -439,18 +439,21 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     element.style.top = `${top}px`;
   }
 
-  chatDisplay?.addEventListener('contextmenu', (event) => {
-    const selection = window.getSelection()?.toString().trim();
+  document.addEventListener('contextmenu', (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('#ctx-menu, #translation-popup, #warmup-modal')) return;
+    if (target.closest('#transcript-modal')) return;
+    const selection = window.getSelection()?.toString().trim() ?? '';
     if (!selection) return;
 
     event.preventDefault();
     contextMenuItem = { expression: selection, text: selection, x: event.clientX, y: event.clientY };
 
     if (contextMenu) {
-      contextMenu.style.left = `${event.clientX}px`;
-      contextMenu.style.top = `${event.clientY}px`;
       contextMenu.style.display = 'block';
+      positionPopup(contextMenu, event.clientX, event.clientY);
     }
+    hideTranslationPopup();
   });
 
   function hideContextMenu() {
