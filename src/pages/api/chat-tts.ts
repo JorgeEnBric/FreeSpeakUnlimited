@@ -28,6 +28,9 @@ export const POST: APIRoute = async ({ request }) => {
     await initDB();
     await insertMessage(text);
 
+    const { analyzePendingCorrections } = await import('../../lib/corrections');
+    analyzePendingCorrections().catch(console.error);
+
     const encoder = new TextEncoder();
     const t0 = Date.now();
     let streamClosed = false;

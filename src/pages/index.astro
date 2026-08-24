@@ -24,10 +24,9 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 
       <aside class="trace-panel">
         <h3>Trace de Correcciones</h3>
-        <button id="generate-corrections" class="trace-btn">Generar Correcciones</button>
         <button id="clear-record" class="clear-btn">Limpiar registro</button>
         <div id="trace-results" class="trace-results">
-          <p class="trace-empty">Presiona el botón para generar correcciones de tu conversación</p>
+          <p class="trace-empty">Habla para recibir correcciones automáticas</p>
         </div>
       </aside>
 
@@ -79,56 +78,71 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
   })();
 
-  document.getElementById('generate-corrections')?.addEventListener('click', async () => {
-    const btn = document.getElementById('generate-corrections');
+  // Polling for automatic corrections
+  let corrPollingId: ReturnType<typeof setInterval> | null = null;
+  let lastCorrCount = 0;
+
+  function renderCorrectionsPanel(data: { corrections: any[]; unanalyzed: number; analyzing: boolean }) {
     const results = document.getElementById('trace-results');
-    if (!btn || !results) return;
-    btn.disabled = true;
-    btn.textContent = 'Generando...';
-    results.innerHTML = '<p class="trace-loading"><span class="timer" id="corr-timer">00:00</span> Analyzing your speech...</p>';
-    const corrTimer = document.getElementById('corr-timer');
-    const corrStart = Date.now();
-    const corrInterval = setInterval(() => {
-      const e = Math.floor((Date.now() - corrStart) / 1000);
-      corrTimer.textContent = `${String(Math.floor(e/60)).padStart(2,'0')}:${String(e%60).padStart(2,'0')}`;
-    }, 1000);
-    function showResult(html) { clearInterval(corrInterval); results.innerHTML = html; }
-    try {
-      const res = await fetch('/api/generate-corrections', { method: 'POST' });
-      const data = await res.json();
-      if (data.error) {
-        showResult(`<div class="trace-error">${data.error}</div>`);
-      } else if (data.corrections && data.corrections.length === 0 && data.unanalyzed === 0) {
-        showResult('<div class="trace-empty">No hay correcciones aún. Empieza a hablar primero.</div>');
-      } else if (data.corrections && data.corrections.length > 0) {
-        let html = '<div class="trace-cards">';
-        for (const group of data.corrections) {
-          html += `
-            <div class="corr-group">
-              <div class="corr-group-header">
-                <span class="corr-group-code">${group.code}</span>
-                <span class="corr-group-label">${group.label}</span>
-              </div>`;
-          for (const ex of group.examples) {
-            html += `
-              <div class="corr-card">
-                <div class="corr-row"><span class="corr-bad">${ex.original}</span></div>
-                <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${ex.corrected || ex.tip}</span></div>
-              </div>`;
-          }
-          html += '</div>';
-        }
-        html += '</div>';
-        showResult(html);
-      } else if (data.unanalyzed > 0) {
-        showResult(`<div class="trace-loading">${data.unanalyzed} mensajes pendientes por analizar...</div>`);
-      }
-    } catch (e) {
-      showResult('<p class="trace-error">Error generating corrections.</p>');
+    if (!results) return;
+
+    if (data.analyzing) {
+      results.innerHTML = '<p class="trace-loading">Analizando tus correcciones...</p>';
+      return;
     }
-    btn.disabled = false;
-    btn.textContent = 'Generar Correcciones';
-  });
+
+    if (data.unanalyzed > 0 && (!data.corrections || data.corrections.length === 0)) {
+      results.innerHTML = '<p class="trace-loading">Preparando análisis...</p>';
+      return;
+    }
+
+    if (!data.corrections || data.corrections.length === 0) {
+      results.innerHTML = '<p class="trace-empty">Habla para recibir correcciones automáticas</p>';
+      return;
+    }
+
+    const totalCorrections = data.corrections.reduce((sum: number, g: any) => sum + g.examples.length, 0);
+    if (totalCorrections === lastCorrCount) return;
+    lastCorrCount = totalCorrections;
+
+    let html = '<div class="trace-cards">';
+    for (const group of data.corrections) {
+      html += `
+        <div class="corr-group">
+          <div class="corr-group-header">
+            <span class="corr-group-code">${group.code}</span>
+            <span class="corr-group-label">${group.label}</span>
+          </div>`;
+      for (const ex of group.examples) {
+        html += `
+          <div class="corr-card">
+            <div class="corr-row"><span class="corr-bad">${ex.original}</span></div>
+            <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${ex.corrected || ex.tip}</span></div>
+          </div>`;
+      }
+      html += '</div>';
+    }
+    html += '</div>';
+    results.innerHTML = html;
+  }
+
+  async function pollCorrections() {
+    try {
+      const res = await fetch('/api/corrections-status');
+      const data = await res.json();
+      renderCorrectionsPanel(data);
+    } catch (e) {
+      // silently ignore polling errors
+    }
+  }
+
+  function startCorrectionsPolling() {
+    if (corrPollingId) return;
+    pollCorrections();
+    corrPollingId = setInterval(pollCorrections, 3000);
+  }
+
+  startCorrectionsPolling();
 
   document.getElementById('clear-record')?.addEventListener('click', async () => {
     const btn = document.getElementById('clear-record');
@@ -147,6 +161,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       } else {
         const results = document.getElementById('trace-results');
         if (results) results.innerHTML = '<p class="trace-empty">Correcciones limpiadas.</p>';
+        lastCorrCount = 0;
       }
     } catch (e) {
       alert('Error al limpiar el registro.');
@@ -562,30 +577,6 @@ import AudioRecorder from '../components/AudioRecorder.astro';
   .trace-panel h3::before {
     content: '📝';
     font-size: 1.1rem;
-  }
-
-  .trace-btn {
-    padding: 0.6rem 1rem;
-    border: none;
-    border-radius: 8px;
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
-    color: white;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-  }
-
-  .trace-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-  }
-
-  .trace-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
   }
 
   .clear-btn {
