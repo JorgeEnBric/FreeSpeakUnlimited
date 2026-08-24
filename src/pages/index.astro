@@ -86,13 +86,16 @@ import AudioRecorder from '../components/AudioRecorder.astro';
   function updateStatusMessage(msg: string) {
     const results = document.getElementById('trace-results');
     if (!results) return;
-    let statusEl = results.querySelector('.trace-status');
+    let statusEl = results.querySelector('.trace-status') as HTMLElement | null;
     if (!statusEl) {
       statusEl = document.createElement('p');
       statusEl.className = 'trace-status trace-loading';
-      results.appendChild(statusEl);
     }
     statusEl.textContent = msg;
+    // Siempre al principio, por delante de .trace-cards
+    if (results.firstChild !== statusEl) {
+      results.prepend(statusEl);
+    }
   }
 
   function removeStatusMessage() {
@@ -141,14 +144,22 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     const results = document.getElementById('trace-results');
     if (!results) return;
 
-    // If empty, create the container
-    let container = results.querySelector('.trace-cards');
+    // Si no existe contenedor, crearlo sin borrar el status que ya está arriba
+    let container = results.querySelector('.trace-cards') as HTMLElement | null;
     if (!container) {
-      results.innerHTML = '<div class="trace-cards"></div>';
-      container = results.querySelector('.trace-cards');
+      const empty = results.querySelector('.trace-empty');
+      if (empty) empty.remove();
+      container = document.createElement('div');
+      container.className = 'trace-cards';
+      const statusEl = results.querySelector('.trace-status');
+      if (statusEl) {
+        statusEl.after(container);
+      } else {
+        results.appendChild(container);
+      }
     }
 
-    // Corrections arrive oldest-first; prepending each leaves the newest on top
+    // Corrections arrive oldest-first; prepending each leaves the newest on top (id DESC)
     for (const corr of corrections) {
       const card = document.createElement('div');
       card.innerHTML = renderCard(corr).trim();
@@ -156,34 +167,41 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       if (cardEl && container) container.prepend(cardEl);
       if (corr.id > lastCorrectionId) lastCorrectionId = corr.id;
     }
-
-    removeStatusMessage();
   }
 
   function renderCorrectionsPanel(data: any) {
     const results = document.getElementById('trace-results');
     if (!results) return;
 
-    // Initial load: render all corrections
-    if (isFirstLoad && data.corrections) {
-      renderAllCorrections(data.corrections);
+    // Initial load: acepta ambos payloads (corrections o newCorrections)
+    if (isFirstLoad) {
+      const initial = (data.corrections ?? data.newCorrections ?? []) as any[];
+      renderAllCorrections(initial);
       isFirstLoad = false;
 
-      // Show analyzing status after initial load
       if (data.analyzing && data.queueLength > 0) {
         updateStatusMessage(`Analizando... (${data.queueLength} en cola)`);
       } else if (data.analyzing) {
         updateStatusMessage('Analizando tu frase');
+      } else {
+        removeStatusMessage();
       }
       return;
     }
 
-    // Incremental update: append new corrections
+    // Incremental update: caso normal newCorrections (ASC -> prepend deja DESC)
     if (data.newCorrections && data.newCorrections.length > 0) {
       appendNewCorrections(data.newCorrections);
+    } else if (data.corrections && data.corrections.length > 0) {
+      // Fallback A-light: backend devolvió corrections con ?since=0 (ej. DB vacía al inicio)
+      // Filtrar sin flicker: solo nuevos id y ordenar ASC para prepend correcto
+      const nuevos = (data.corrections as any[])
+        .filter((c: any) => c.id > lastCorrectionId)
+        .sort((a: any, b: any) => a.id - b.id);
+      if (nuevos.length > 0) appendNewCorrections(nuevos);
     }
 
-    // Update status messages
+    // Update status messages (siempre arriba via prepend)
     if (data.analyzing && data.queueLength > 0) {
       updateStatusMessage(`Analizando... (${data.queueLength} en cola)`);
     } else if (data.analyzing) {
@@ -199,7 +217,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       const data = await res.json();
       renderCorrectionsPanel(data);
     } catch (e) {
-      // silently ignore polling errors
+      console.error('[pollCorrections]', e);
     }
   }
 
