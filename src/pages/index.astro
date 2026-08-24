@@ -106,9 +106,11 @@ import AudioRecorder from '../components/AudioRecorder.astro';
   }
 
   function renderCard(corr: any): string {
+    const hasTime = corr.processing_ms != null;
+    const timeLabel = hasTime ? Math.round(corr.processing_ms / 1000) + 's' : '-';
     return `
         <div class="corr-card" data-id="${corr.id}">
-          <span class="corr-tag">${corr.label || corr.code}</span>
+          <div class="corr-header"><span class="corr-time">${timeLabel}</span><span class="corr-tag">${corr.label || corr.code}</span></div>
           <div class="corr-row"><span class="corr-bad">${corr.original}</span></div>
           <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${corr.corrected}</span></div>
         </div>`;
@@ -728,6 +730,27 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     background: rgba(59, 130, 246, 0.1);
     padding: 0.15rem 0.4rem;
     border-radius: 4px;
+  }
+
+  .corr-header {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .corr-time {
+    align-self: flex-start;
+    font-size: 0.6rem;
+    font-weight: 700;
+    font-family: monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.3px;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    min-width: 2.2em;
+    text-align: center;
   }
 
   .corr-tag {

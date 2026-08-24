@@ -32,6 +32,7 @@ export async function initDB(): Promise<void> {
     original TEXT NOT NULL,
     corrected TEXT,
     pattern_code TEXT NOT NULL,
+    processing_ms INTEGER,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (message_id) REFERENCES messages(id)
   )`);
@@ -42,6 +43,13 @@ export async function initDB(): Promise<void> {
       d.run(`ALTER TABLE corrections DROP COLUMN tip`);
     }
   } catch { /* sqlite <3.35 o columna ya eliminada */ }
+  // Migración: añadir processing_ms si no existe
+  try {
+    const cols2 = d.exec(`PRAGMA table_info(corrections)`);
+    if (cols2.length && !cols2[0].values.some((r: any) => r[1] === 'processing_ms')) {
+      d.run(`ALTER TABLE corrections ADD COLUMN processing_ms INTEGER`);
+    }
+  } catch { /* ya existe */ }
   d.run(`CREATE TABLE IF NOT EXISTS patterns (
     code TEXT PRIMARY KEY,
     label TEXT NOT NULL,
@@ -142,11 +150,11 @@ export async function getMessageById(id: number): Promise<{ id: number; text: st
 
 export async function getNewCorrectionsSince(lastId: number): Promise<{
   id: number; code: string; label: string;
-  original: string; corrected: string;
+  original: string; corrected: string; processing_ms: number | null;
 }[]> {
   const d = await getDb();
   const rows = d.exec(`
-    SELECT c.id, p.code, p.label, c.original, c.corrected
+    SELECT c.id, p.code, p.label, c.original, c.corrected, c.processing_ms
     FROM corrections c
     JOIN patterns p ON p.code = c.pattern_code
     WHERE c.id > ?
@@ -159,6 +167,7 @@ export async function getNewCorrectionsSince(lastId: number): Promise<{
     label: r[2] as string,
     original: r[3] as string,
     corrected: r[4] as string,
+    processing_ms: r[5] as number | null,
   }));
 }
 
@@ -166,12 +175,13 @@ export async function insertCorrection(
   messageId: number,
   original: string,
   corrected: string,
-  patternCode: string
+  patternCode: string,
+  processingMs?: number | null
 ): Promise<void> {
   const d = await getDb();
   d.run(
-    'INSERT INTO corrections (message_id, original, corrected, pattern_code) VALUES (?, ?, ?, ?)',
-    [messageId, original, corrected, patternCode]
+    'INSERT INTO corrections (message_id, original, corrected, pattern_code, processing_ms) VALUES (?, ?, ?, ?, ?)',
+    [messageId, original, corrected, patternCode, processingMs ?? null]
   );
   save();
 }
@@ -186,11 +196,11 @@ export async function markAnalyzed(messageIds: number[]): Promise<void> {
 
 export async function getCorrectionsByPattern(): Promise<{
   id: number; code: string; label: string;
-  original: string; corrected: string;
+  original: string; corrected: string; processing_ms: number | null;
 }[]> {
   const d = await getDb();
   const rows = d.exec(`
-    SELECT c.id, p.code, p.label, c.original, c.corrected
+    SELECT c.id, p.code, p.label, c.original, c.corrected, c.processing_ms
     FROM corrections c
     JOIN patterns p ON p.code = c.pattern_code
     ORDER BY c.id DESC
@@ -202,6 +212,7 @@ export async function getCorrectionsByPattern(): Promise<{
     label: r[2] as string,
     original: r[3] as string,
     corrected: r[4] as string,
+    processing_ms: r[5] as number | null,
   }));
 }
 

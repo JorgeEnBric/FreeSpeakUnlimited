@@ -9,6 +9,7 @@ const TEMP_DIR = join(process.cwd(), 'temp');
 
 let messageQueue: number[] = [];
 let isCurrentlyAnalyzing = false;
+const queuedAt = new Map<number, number>();
 
 export function isAnalyzing(): boolean {
   return isCurrentlyAnalyzing;
@@ -19,6 +20,7 @@ export function getQueueLength(): number {
 }
 
 export function notifyNewMessage(messageId: number): void {
+  queuedAt.set(messageId, Date.now());
   messageQueue.push(messageId);
   processNext().catch(err => {
     console.error('[Corrections] Error in processNext:', err);
@@ -51,6 +53,9 @@ async function processNext(): Promise<void> {
 }
 
 async function analyzeSingleMessage(messageId: number): Promise<void> {
+  const tQueued = queuedAt.get(messageId);
+  queuedAt.delete(messageId);
+  const tStart = tQueued ?? Date.now();
   console.log(`[Corrections] Analyzing message ${messageId}...`);
   const { initDB, getMessageById, insertCorrection, markAnalyzed, insertLog } = await import('./database');
   await initDB();
@@ -114,6 +119,8 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
       try { unlinkSync(outFile); } catch (_) {}
     }
 
+    const processingMs = Date.now() - tStart;
+
     await insertLog('corrections', `Raw model output (msg ${messageId}):\n${raw.substring(0, 2000)}`);
 
     const asstIdx = raw.lastIndexOf('Assistant:');
@@ -160,17 +167,17 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
       const pattern = patterns.length > 0 ? patterns[0] : 'OTHER';
       const original = subSentences[i] ?? message.text;
 
-      await insertLog('corrections', `msg ${messageId} pattern=${pattern} corr="${correction.substring(0,60)}" orig="${original.substring(0,40)}"`);
+      await insertLog('corrections', `msg ${messageId} pattern=${pattern} corr="${correction.substring(0,60)}" orig="${original.substring(0,40)}" processingMs=${processingMs}`);
 
       if (correction) {
-        await insertCorrection(messageId, original, correction, pattern);
+        await insertCorrection(messageId, original, correction, pattern, processingMs);
       }
     }
     if (blocks.length !== subSentences.length) {
       await insertLog('corrections', `WARN msg ${messageId}: blocks ${blocks.length} != sentences ${subSentences.length}, raw len ${raw.length}`);
     }
 
-    console.log(`[Corrections] Message ${messageId} processed (${blocks.length} blocks found)`);
+    console.log(`[Corrections] Message ${messageId} processed (${blocks.length} blocks found) in ${processingMs}ms`);
   } finally {
     await markAnalyzed([messageId]);
     console.log(`[Corrections] Message ${messageId} marked as analyzed`);
