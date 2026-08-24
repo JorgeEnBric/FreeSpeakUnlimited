@@ -7,48 +7,89 @@ import { PATTERN_LIST, CORRECTIONS_SYSTEM_PROMPT } from './prompts';
 
 const TEMP_DIR = join(process.cwd(), 'temp');
 
-let analyzing = false;
+let messageQueue: number[] = [];
+let isCurrentlyAnalyzing = false;
 
 export function isAnalyzing(): boolean {
-  return analyzing;
+  return isCurrentlyAnalyzing;
 }
 
-export async function analyzePendingCorrections(): Promise<void> {
-  if (analyzing) return;
-  analyzing = true;
+export function getQueueLength(): number {
+  return messageQueue.length;
+}
+
+export function notifyNewMessage(messageId: number): void {
+  messageQueue.push(messageId);
+  processNext().catch(err => {
+    console.error('[Corrections] Error in processNext:', err);
+    isCurrentlyAnalyzing = false;
+  });
+}
+
+async function processNext(): Promise<void> {
+  if (isCurrentlyAnalyzing || messageQueue.length === 0) return;
+
+  isCurrentlyAnalyzing = true;
+  const messageId = messageQueue.shift()!;
 
   try {
-    const { initDB, getPendingMessages, insertCorrection, markAnalyzed, insertLog } = await import('./database');
-    await initDB();
-
-    const pending = await getPendingMessages();
-    if (pending.length === 0) return;
-
-    const subSentences: { msgId: number; text: string }[] = [];
-    for (const msg of pending) {
-      const parts = msg.text.split('\n').filter(s => s.trim().length > 0);
-      for (const part of parts) {
-        subSentences.push({ msgId: msg.id, text: part.trim() });
-      }
+    await analyzeSingleMessage(messageId);
+  } catch (error) {
+    console.error(`[Corrections] Error analyzing msg ${messageId}:`, error);
+    try {
+      const { insertLog, markAnalyzed } = await import('./database');
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      await insertLog('corrections', `ERROR analyzing msg ${messageId}: ${msg}`);
+      await markAnalyzed([messageId]);
+    } catch (_) {
+      // Ignore errors
     }
-    const sentences = subSentences.map(s => `"${s.text}"`).join('\n');
+  } finally {
+    isCurrentlyAnalyzing = false;
+    processNext();
+  }
+}
+
+async function analyzeSingleMessage(messageId: number): Promise<void> {
+  console.log(`[Corrections] Analyzing message ${messageId}...`);
+  const { initDB, getMessageById, insertCorrection, markAnalyzed, insertLog } = await import('./database');
+  await initDB();
+
+  try {
+    const message = await getMessageById(messageId);
+    if (!message) {
+      console.error(`[Corrections] Message ${messageId} not found`);
+      return;
+    }
+    console.log(`[Corrections] Message ${messageId}: "${message.text.substring(0, 50)}..."`);
+
+    const subSentences: string[] = message.text.split('\n').filter(s => s.trim().length > 0);
+    if (subSentences.length === 0) return;
+
+    const sentences = subSentences.map(s => `"${s.trim()}"`).join('\n');
     const systemPrompt = CORRECTIONS_SYSTEM_PROMPT;
     const userPrompt = `Review each sentence and find ALL grammar mistakes. Fix them to produce natural, idiomatic English. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Sentence:** exact original text (copy verbatim, do NOT correct it)\n**Correction:** complete corrected sentence\n**Tip:** what was wrong and why\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
 
     let raw = '';
     await ensureStarted();
     if (isRunning()) {
-      const result = await complete(userPrompt, systemPrompt, { n_predict: 150 });
+      console.log(`[Corrections] Calling LLM for message ${messageId}...`);
+      const result = await complete(userPrompt, systemPrompt, { n_predict: 150, timeoutMs: 180000 });
       if (result) raw = result;
+      console.log(`[Corrections] LLM response length: ${raw.length}`);
+    } else {
+      console.log(`[Corrections] LLM server not running for message ${messageId}`);
     }
 
     if (!raw) {
       const modelPath = getGemmaModelPath();
       const llamaCli = findLlamaCli();
       if (!existsSync(llamaCli)) {
-        await insertLog('corrections', 'llama-cli.exe not found');
+        console.log(`[Corrections] llama-cli.exe not found, marking as analyzed without corrections`);
+        await insertLog('corrections', `llama-cli.exe not found for msg ${messageId}`);
         return;
       }
+      console.log(`[Corrections] Falling back to CLI for message ${messageId}...`);
       const ts = Date.now();
       const outFile = join(TEMP_DIR, `corr-${ts}.txt`);
       execFileSync(llamaCli, [
@@ -73,11 +114,10 @@ export async function analyzePendingCorrections(): Promise<void> {
       try { unlinkSync(outFile); } catch (_) {}
     }
 
-    await insertLog('corrections', `Raw model output:\n${raw.substring(0, 2000)}`);
+    await insertLog('corrections', `Raw model output (msg ${messageId}):\n${raw.substring(0, 2000)}`);
 
     const asstIdx = raw.lastIndexOf('Assistant:');
     const body = asstIdx !== -1 ? raw.substring(asstIdx + 'Assistant:'.length).trim() : raw;
-    await insertLog('corrections', `Extracted body (first 500):\n${body.substring(0, 500)}`);
 
     const sentMarker = '**Sentence:**';
     const blocks: string[] = [];
@@ -109,10 +149,7 @@ export async function analyzePendingCorrections(): Promise<void> {
       return text.substring(valStart, valEnd).trim();
     }
 
-    const analyzedIds: number[] = [];
-
     for (const block of blocks) {
-      const sentText = extractAfter('', block, [corrLabel]).replace(/\*\*/g, '').trim();
       const correction = extractAfter(corrLabel, block, [tipLabel, patLabel, patCodeLabel]).replace(/\*\*/g, '').trim();
       const tip = extractAfter(tipLabel, block, [patLabel, patCodeLabel]).replace(/\*\*/g, '').trim();
       let patternRaw = extractAfter(patLabel, block, []).trim();
@@ -120,40 +157,16 @@ export async function analyzePendingCorrections(): Promise<void> {
       const patterns = patternRaw.split(',').map(p => p.trim()).filter(p => PATTERN_LIST.includes(p));
       const pattern = patterns.length > 0 ? patterns[0] : 'OTHER';
 
-      let matchedMsg: typeof pending[0] | null = null;
-      for (const msg of pending) {
-        const msgText = msg.text.replace(/\r?\n/g, ' ').trim();
-        if (msgText.includes(sentText) || sentText.includes(msgText)) {
-          matchedMsg = msg;
-          break;
-        }
-      }
-
-      if (!matchedMsg) {
-        const unset = pending.find(m => !analyzedIds.includes(m.id));
-        if (unset) {
-          matchedMsg = unset;
-          await insertLog('corrections', `Fallback match: id=${unset.id} for "${sentText.substring(0,60)}"`);
-        } else {
-          await insertLog('corrections', `No message matched: "${sentText.substring(0,60)}"`);
-          continue;
-        }
-      }
-
-      await insertLog('corrections', `msg ${matchedMsg.id} pattern=${pattern} corr="${correction.substring(0,60)}" tip="${tip.substring(0,60)}"`);
+      await insertLog('corrections', `msg ${messageId} pattern=${pattern} corr="${correction.substring(0,60)}" tip="${tip.substring(0,60)}"`);
 
       if (correction || tip) {
-        await insertCorrection(matchedMsg.id, matchedMsg.text, correction, tip, pattern);
+        await insertCorrection(messageId, message.text, correction, tip, pattern);
       }
     }
 
-    for (const msg of pending) analyzedIds.push(msg.id);
-    await markAnalyzed(analyzedIds);
-  } catch (error) {
-    const { insertLog } = await import('./database');
-    const msg = error instanceof Error ? error.message : 'Unknown error';
-    await insertLog('corrections', `ERROR: ${msg}`);
+    console.log(`[Corrections] Message ${messageId} processed (${blocks.length} blocks found)`);
   } finally {
-    analyzing = false;
+    await markAnalyzed([messageId]);
+    console.log(`[Corrections] Message ${messageId} marked as analyzed`);
   }
 }

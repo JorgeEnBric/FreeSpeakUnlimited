@@ -86,7 +86,7 @@ export function stop(): void {
 export async function complete(
   prompt: string,
   systemPrompt: string,
-  options?: { n_predict?: number; temperature?: number; repeat_penalty?: number }
+  options?: { n_predict?: number; temperature?: number; repeat_penalty?: number; timeoutMs?: number }
 ): Promise<string | null> {
   if (!isRunning()) return null;
 
@@ -104,6 +104,7 @@ export async function complete(
         repeat_penalty: options?.repeat_penalty ?? 1.0,
         cache_prompt: true,
       }),
+      signal: AbortSignal.timeout(options?.timeoutMs ?? 120000),
     });
     if (!res.ok) return null;
     const data = await res.json() as { choices: { message: { content: string } }[] };

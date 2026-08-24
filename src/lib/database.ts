@@ -115,8 +115,9 @@ export async function getLogs(limit = 50): Promise<{ id: number; source: string;
 export async function insertMessage(text: string): Promise<number> {
   const d = await getDb();
   d.run('INSERT INTO messages (text, analyzed) VALUES (?, 0)', [text]);
+  const id = (d.exec('SELECT last_insert_rowid()')[0].values[0][0]) as number;
   save();
-  return (d.exec('SELECT last_insert_rowid()')[0].values[0][0]) as number;
+  return id;
 }
 
 export async function getPendingMessages(): Promise<{ id: number; text: string }[]> {
@@ -124,6 +125,36 @@ export async function getPendingMessages(): Promise<{ id: number; text: string }
   const rows = d.exec('SELECT id, text FROM messages WHERE analyzed = 0 ORDER BY created_at ASC');
   if (!rows.length) return [];
   return rows[0].values.map((r: any) => ({ id: r[0] as number, text: r[1] as string }));
+}
+
+export async function getMessageById(id: number): Promise<{ id: number; text: string } | null> {
+  const d = await getDb();
+  const rows = d.exec('SELECT id, text FROM messages WHERE id = ?', [id]);
+  if (!rows.length || !rows[0].values.length) return null;
+  return { id: rows[0].values[0][0] as number, text: rows[0].values[0][1] as string };
+}
+
+export async function getNewCorrectionsSince(lastId: number): Promise<{
+  id: number; code: string; label: string;
+  original: string; corrected: string; tip: string;
+}[]> {
+  const d = await getDb();
+  const rows = d.exec(`
+    SELECT c.id, p.code, p.label, c.original, c.corrected, c.tip
+    FROM corrections c
+    JOIN patterns p ON p.code = c.pattern_code
+    WHERE c.id > ?
+    ORDER BY c.created_at ASC
+  `, [lastId]);
+  if (!rows.length) return [];
+  return rows[0].values.map((r: any) => ({
+    id: r[0] as number,
+    code: r[1] as string,
+    label: r[2] as string,
+    original: r[3] as string,
+    corrected: r[4] as string,
+    tip: r[5] as string,
+  }));
 }
 
 export async function insertCorrection(
@@ -150,32 +181,25 @@ export async function markAnalyzed(messageIds: number[]): Promise<void> {
 }
 
 export async function getCorrectionsByPattern(): Promise<{
-  code: string;
-  label: string;
-  examples: { original: string; corrected: string; tip: string }[];
+  id: number; code: string; label: string;
+  original: string; corrected: string; tip: string;
 }[]> {
   const d = await getDb();
   const rows = d.exec(`
-    SELECT p.code, p.label, c.original, c.corrected, c.tip, c.created_at
+    SELECT c.id, p.code, p.label, c.original, c.corrected, c.tip
     FROM corrections c
     JOIN patterns p ON p.code = c.pattern_code
-    ORDER BY c.created_at DESC
+    ORDER BY c.id DESC
   `);
   if (!rows.length) return [];
-  const map = new Map<string, { code: string; label: string; examples: { original: string; corrected: string; tip: string }[]; lastCreated: string }>();
-  for (const r of rows[0].values) {
-    const code = r[0] as string;
-    const label = r[1] as string;
-    const createdAt = r[5] as string;
-    if (!map.has(code)) map.set(code, { code, label, examples: [], lastCreated: createdAt });
-    map.get(code)!.examples.push({
-      original: r[2] as string,
-      corrected: r[3] as string,
-      tip: r[4] as string,
-    });
-    if (createdAt > map.get(code)!.lastCreated) map.get(code)!.lastCreated = createdAt;
-  }
-  return Array.from(map.values()).sort((a, b) => b.lastCreated.localeCompare(a.lastCreated));
+  return rows[0].values.map((r: any) => ({
+    id: r[0] as number,
+    code: r[1] as string,
+    label: r[2] as string,
+    original: r[3] as string,
+    corrected: r[4] as string,
+    tip: r[5] as string,
+  }));
 }
 
 export async function getUnanalyzedCount(): Promise<number> {

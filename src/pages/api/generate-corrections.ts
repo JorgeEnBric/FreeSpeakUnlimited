@@ -1,25 +1,25 @@
 import type { APIRoute } from 'astro';
-import { analyzePendingCorrections } from '../../lib/corrections';
+import { notifyNewMessage } from '../../lib/corrections';
 
 export const prerender = false;
 
 export const POST: APIRoute = async () => {
   try {
-    await analyzePendingCorrections();
-
-    const { initDB, getCorrectionsByPattern, getPendingMessages } = await import('../../lib/database');
+    const { initDB, getPendingMessages } = await import('../../lib/database');
     await initDB();
 
-    const corrections = await getCorrectionsByPattern();
     const pending = await getPendingMessages();
+    for (const msg of pending) {
+      notifyNewMessage(msg.id);
+    }
 
-    return new Response(JSON.stringify({ corrections, unanalyzed: pending.length }), {
+    return new Response(JSON.stringify({ queued: pending.length }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    return new Response(JSON.stringify({ error: msg, unanalyzed: 0 }), {
+    return new Response(JSON.stringify({ error: msg }), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
