@@ -68,13 +68,13 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
 
     const sentences = subSentences.map(s => `"${s.trim()}"`).join('\n');
     const systemPrompt = CORRECTIONS_SYSTEM_PROMPT;
-    const userPrompt = `Review each sentence and find ALL grammar mistakes. Fix them to produce natural, idiomatic English. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Sentence:** exact original text (copy verbatim, do NOT correct it)\n**Correction:** complete corrected sentence\n**Tip:** what was wrong and why\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
+    const userPrompt = `Review each sentence and find ALL grammar mistakes. Fix them to produce natural, idiomatic English. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Correction:** complete corrected sentence\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
 
     let raw = '';
     await ensureStarted();
     if (isRunning()) {
       console.log(`[Corrections] Calling LLM for message ${messageId}...`);
-      const result = await complete(userPrompt, systemPrompt, { n_predict: 150, timeoutMs: 180000 });
+      const result = await complete(userPrompt, systemPrompt, { n_predict: 60, timeoutMs: 180000 });
       if (result) raw = result;
       console.log(`[Corrections] LLM response length: ${raw.length}`);
     } else {
@@ -97,7 +97,7 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
         '-sys', systemPrompt,
         '-p', userPrompt,
         '-o', outFile,
-        '-n', '150',
+        '-n', '60',
         '--temp', '0.3',
         '--repeat-penalty', '1.0',
         '--single-turn',
@@ -119,21 +119,20 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
     const asstIdx = raw.lastIndexOf('Assistant:');
     const body = asstIdx !== -1 ? raw.substring(asstIdx + 'Assistant:'.length).trim() : raw;
 
-    const sentMarker = '**Sentence:**';
+    // Usar **Correction:** como separador, original tomado de subSentences por índice
+    const corrMarker = '**Correction:**';
     const blocks: string[] = [];
     let cursor = 0;
     while (true) {
-      const startIdx = body.indexOf(sentMarker, cursor);
+      const startIdx = body.indexOf(corrMarker, cursor);
       if (startIdx === -1) break;
-      const blockStart = startIdx + sentMarker.length;
-      const nextIdx = body.indexOf(sentMarker, blockStart);
+      const blockStart = startIdx + corrMarker.length;
+      const nextIdx = body.indexOf(corrMarker, blockStart);
       const block = (nextIdx !== -1 ? body.substring(blockStart, nextIdx) : body.substring(blockStart)).trim();
       if (block.length >= 5) blocks.push(block);
       cursor = nextIdx !== -1 ? nextIdx : body.length;
     }
 
-    const corrLabel = '**Correction:**';
-    const tipLabel = '**Tip:**';
     const patLabel = '**Pattern:**';
     const patCodeLabel = '**Pattern Code:**';
 
@@ -149,19 +148,26 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
       return text.substring(valStart, valEnd).trim();
     }
 
-    for (const block of blocks) {
-      const correction = extractAfter(corrLabel, block, [tipLabel, patLabel, patCodeLabel]).replace(/\*\*/g, '').trim();
-      const tip = extractAfter(tipLabel, block, [patLabel, patCodeLabel]).replace(/\*\*/g, '').trim();
+    for (let i = 0; i < blocks.length; i++) {
+      const block = blocks[i];
+      // block ya empieza después de **Correction:**, correction hasta Pattern
+      let patIdx = block.indexOf(patLabel);
+      if (patIdx === -1) patIdx = block.indexOf(patCodeLabel);
+      const correction = (patIdx !== -1 ? block.substring(0, patIdx) : block).replace(/\*\*/g, '').trim();
       let patternRaw = extractAfter(patLabel, block, []).trim();
       if (!patternRaw) patternRaw = extractAfter(patCodeLabel, block, []).trim();
       const patterns = patternRaw.split(',').map(p => p.trim()).filter(p => PATTERN_LIST.includes(p));
       const pattern = patterns.length > 0 ? patterns[0] : 'OTHER';
+      const original = subSentences[i] ?? message.text;
 
-      await insertLog('corrections', `msg ${messageId} pattern=${pattern} corr="${correction.substring(0,60)}" tip="${tip.substring(0,60)}"`);
+      await insertLog('corrections', `msg ${messageId} pattern=${pattern} corr="${correction.substring(0,60)}" orig="${original.substring(0,40)}"`);
 
-      if (correction || tip) {
-        await insertCorrection(messageId, message.text, correction, tip, pattern);
+      if (correction) {
+        await insertCorrection(messageId, original, correction, pattern);
       }
+    }
+    if (blocks.length !== subSentences.length) {
+      await insertLog('corrections', `WARN msg ${messageId}: blocks ${blocks.length} != sentences ${subSentences.length}, raw len ${raw.length}`);
     }
 
     console.log(`[Corrections] Message ${messageId} processed (${blocks.length} blocks found)`);
