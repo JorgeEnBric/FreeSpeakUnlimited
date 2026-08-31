@@ -15,23 +15,23 @@
   </button>
   <div class="recorder-actions">
     <p id="fluency-status" class="status"><span id="fluency-timer" class="fluency-timer"></span>Click to start recording</p>
-    <button id="fluency-pause-btn" class="pause-button hidden" aria-label="Pause recording">Pausar</button>
-    <button id="fluency-cancel-btn" class="cancel-button hidden" aria-label="Cancel recording">Cancelar</button>
+    <button id="fluency-pause-btn" class="pause-button hidden" aria-label="Pause recording">Pause</button>
+    <button id="fluency-cancel-btn" class="cancel-button hidden" aria-label="Cancel recording">Cancel</button>
   </div>
 
   <div id="fluency-transcript-modal" class="transcript-modal hidden">
     <div class="transcript-box">
-      <h3 class="transcript-title">Tu intervención</h3>
-      <p class="transcript-hint">Revisa la transcripción. Corrige si es necesario y presiona Enviar. Debe durar 1:00-1:20.</p>
+      <h3 class="transcript-title">Your speech</h3>
+      <p class="transcript-hint">Review transcript. Correct if needed and press Send. Must last 1:00-1:20.</p>
       <div id="fluency-transcript-edit" class="transcript-edit" contenteditable="true" role="textbox" aria-multiline="false" spellcheck="false"></div>
       <div id="fluency-suggest-pop" class="suggest-pop hidden">
         <span class="suggest-label">Sugerencia:</span>
         <button id="fluency-suggest-insert" class="suggest-insert" type="button">…</button>
       </div>
       <div class="transcript-actions">
-        <button id="fluency-transcript-replay" class="transcript-btn ghost replay" type="button">&#9654; Escuchar audio</button>
-        <button id="fluency-transcript-cancel" class="transcript-btn ghost" type="button">Descartar</button>
-        <button id="fluency-transcript-confirm" class="transcript-btn" type="button">Enviar</button>
+        <button id="fluency-transcript-replay" class="transcript-btn ghost replay" type="button">&#9654; Listen to audio</button>
+        <button id="fluency-transcript-cancel" class="transcript-btn ghost" type="button">Discard</button>
+        <button id="fluency-transcript-confirm" class="transcript-btn" type="button">Send</button>
       </div>
     </div>
   </div>
@@ -184,7 +184,7 @@
       else timerEl.classList.add('over');
     }
     if (status) {
-      const base = isPaused ? 'Pausado' : 'Grabando';
+      const base = isPaused ? 'Paused' : 'Recording';
       if (timerEl) status.innerHTML = `<span id="fluency-timer" class="fluency-timer ${timerEl.className}">${formatTimer(elapsed)}</span> ${base} (${Math.floor(elapsed/1000)}s / 60-80s)`;
     }
     if (elapsed > 80000) {
@@ -214,21 +214,21 @@
           pausedAccum = 0;
           recordingDurationMs = 0;
           if (timerEl) { timerEl.textContent = '00:00'; timerEl.className = 'fluency-timer'; }
-          if (status) status.innerHTML = '<span id="fluency-timer" class="fluency-timer">00:00</span> Grabación cancelada';
+          if (status) status.innerHTML = '<span id="fluency-timer" class="fluency-timer">00:00</span> Recording cancelled';
           updateUI();
           return;
         }
         const duration = pausedAccum + (isPaused ? 0 : (Date.now() - recordingStart));
         recordingDurationMs = duration;
         if (duration < 60000) {
-          if (status) status.innerHTML = `<span class="fluency-timer warn">${formatTimer(duration)}</span> Muy corto: ${Math.floor(duration/1000)}s, necesitas 60-80s. Vuelve a grabar.`;
+          if (status) status.innerHTML = `<span class="fluency-timer warn">${formatTimer(duration)}</span> Too short: ${Math.floor(duration/1000)}s, need 60-80s. Record again.`;
           isPaused = false;
           pausedAccum = 0;
           updateUI();
           return;
         }
         if (duration > 80000) {
-          if (status) status.innerHTML = `<span class="fluency-timer over">${formatTimer(duration)}</span> ${Math.floor(duration/1000)}s (límite 80s suave, se enviará igual)`;
+          if (status) status.innerHTML = `<span class="fluency-timer over">${formatTimer(duration)}</span> ${Math.floor(duration/1000)}s (soft 80s limit, will still send)`;
         }
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         if (audioBlob.size > 0) await processAudio(audioBlob, duration);
@@ -301,11 +301,11 @@
       cancelBtn?.classList.remove('hidden');
       pauseBtn?.classList.remove('hidden');
       if (isPaused) {
-        pauseBtn.textContent = 'Reanudar';
+        pauseBtn.textContent = 'Resume';
         pauseBtn.classList.add('paused');
         recordBtn.classList.add('paused');
       } else {
-        pauseBtn.textContent = 'Pausar';
+        pauseBtn.textContent = 'Pause';
         pauseBtn.classList.remove('paused');
         recordBtn.classList.remove('paused');
       }
@@ -527,7 +527,7 @@
           replayBtn.classList.remove('hidden');
           onReplayClick = () => { if (audioEl.paused) { audioEl.currentTime=0; audioEl.play().catch(e=>console.error(e)); } else audioEl.pause(); };
           onReplayPlay = () => { replayBtn.innerHTML = '&#10074;&#10074; Pausar'; };
-          onReplayPause = () => { replayBtn.innerHTML = '&#9654; Escuchar audio'; };
+          onReplayPause = () => { replayBtn.innerHTML = '&#9654; Listen to audio'; };
           audioEl.addEventListener('play', onReplayPlay);
           audioEl.addEventListener('pause', onReplayPause);
           audioEl.addEventListener('ended', onReplayPause);
@@ -570,7 +570,7 @@
     }
     function clearTimer() { clearInterval(timerInterval); }
 
-    setStatusLabel('Escuchando tu audio');
+    setStatusLabel('Listening to your audio');
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.webm');
     lastAudioBlob = audioBlob;
@@ -581,16 +581,16 @@
       if (data.error) { if (status) status.textContent = data.error; clearTimer(); return; }
       if (!data.transcription) { if (status) status.textContent = 'No transcription. Try again.'; clearTimer(); return; }
 
-      setStatusLabel('Revisa tu transcripción');
+      setStatusLabel('Review your transcript');
       const finalText = await askTranscription(data.transcription, data.uncertainWords, audioBlob);
-      if (finalText === null) { if (status) status.textContent = 'Mensaje descartado'; clearTimer(); return; }
+      if (finalText === null) { if (status) status.textContent = 'Message discarded'; clearTimer(); return; }
 
       const topic = getCurrentTopic();
-      if (!topic) { if (status) status.textContent = 'No hay tema de debate. Genera uno nuevo.'; clearTimer(); return; }
+      if (!topic) { if (status) status.textContent = 'No debate topic. Generate a new one.'; clearTimer(); return; }
 
       addMessage('user', finalText);
       fluencyHistory.push({ role: 'user', content: finalText });
-      setStatusLabel('Pensando respuesta...');
+      setStatusLabel('Thinking...');
       try {
         resetAudioPlayback();
         currentChatAbort = new AbortController();
@@ -646,17 +646,17 @@
         currentChatAbort = null;
         if (fullResponse) {
           fluencyHistory.push({ role: 'assistant', content: fullResponse });
-          if (status) status.innerHTML = `<span id="fluency-timer" class="fluency-timer valid">${formatTimer(durationMs)}</span> Debate continuado - Correcciones en camino`;
+          if (status) status.innerHTML = `<span id="fluency-timer" class="fluency-timer valid">${formatTimer(durationMs)}</span> Debate continued - Corrections on the way`;
           // Also dispatch debateId if not yet
           if (debateIdFromStream) {
             window.dispatchEvent(new CustomEvent('fluency-submitted', { detail: { debateId: debateIdFromStream } }));
           }
         } else if (debateIdFromStream) {
-          if (status) status.innerHTML = `<span id="fluency-timer" class="fluency-timer valid">${formatTimer(durationMs)}</span> Enviado (${Math.round(durationMs/1000)}s) - Correcciones en camino`;
+          if (status) status.innerHTML = `<span id="fluency-timer" class="fluency-timer valid">${formatTimer(durationMs)}</span> Sent (${Math.round(durationMs/1000)}s) - Corrections on the way`;
         }
       } catch (e) {
         if (e && (e as any).name === 'AbortError') { if (status) status.textContent = 'Click to start recording'; }
-        else { console.error('Fluency submit error:', e); if (status) status.textContent = 'Error enviando fluidez.'; }
+        else { console.error('Fluency submit error:', e); if (status) status.textContent = 'Error sending speech.'; }
       }
       clearTimer();
     } catch (error) {
@@ -686,7 +686,7 @@
   .record-button.paused { background: #f59e0b; animation: none; box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4); }
   .mic-icon, .stop-icon { width: 32px; height: 32px; }
   .hidden { display: none; }
-  .status { color: var(--text-muted); font-size: 0.875rem; text-align: center; }
+  .status { color: var(--text-muted); font-size: 0.875rem; text-align: center; width: 100%; display: block; margin: 0 auto; }
   .fluency-timer { font-variant-numeric: tabular-nums; background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 4px; margin-right: 6px; font-size: 0.85em; font-family: monospace; }
   .fluency-timer.valid { background: rgba(74,222,128,0.2); color: #4ade80; }
   .fluency-timer.warn { background: rgba(245,158,11,0.2); color: #f59e0b; }

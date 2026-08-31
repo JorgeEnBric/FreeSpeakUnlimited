@@ -41,7 +41,7 @@ export const POST: APIRoute = async ({ request }) => {
     // Límite 80s es suave solo en micrófono, se permite enviar >80s
 
     if (text.split(/\s+/).length < 20) {
-      return new Response(JSON.stringify({ error: 'El texto es muy corto para 60 segundos de habla' }), {
+      return new Response(JSON.stringify({ error: 'Text is too short for 60 seconds of speech' }), {
         status: 400,
         headers: { 'Content-Type': 'application/json' },
       });

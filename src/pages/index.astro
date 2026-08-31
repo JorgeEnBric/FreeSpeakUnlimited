@@ -7,8 +7,8 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 <Layout title="FreeSpeak Unlimited">
   <main class="app">
     <header class="header">
-      <button id="settings-btn" class="gear-btn" aria-label="Ajustes">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      <button id="settings-btn" class="gear-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.72l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
       </button>
       <div class="header-main">
         <h1>FreeSpeak Unlimited</h1>
@@ -43,8 +43,8 @@ import AudioRecorder from '../components/AudioRecorder.astro';
         <h3>Pomodoro</h3>
         <div class="pomodoro-time" id="pomodoro-time">25:00</div>
         <div class="pomodoro-controls">
-          <button id="pomodoro-toggle" class="pomodoro-btn">Iniciar</button>
-          <button id="pomodoro-reset" class="pomodoro-btn ghost">Reiniciar</button>
+          <button id="pomodoro-toggle" class="pomodoro-btn icon" aria-label="Start"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+          <button id="pomodoro-reset" class="pomodoro-btn icon ghost" aria-label="Reset"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
         </div>
 
         <div class="panel-divider"></div>
@@ -61,28 +61,28 @@ import AudioRecorder from '../components/AudioRecorder.astro';
   <div id="warmup-modal" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-spinner"></div>
-      <p>Enviando el system prompt de conversación y de correcciones al cache...</p>
+      <p>Sending conversation and corrections system prompt to cache...</p>
     </div>
   </div>
 
   <div id="settings-modal" class="modal-overlay hidden">
     <div class="modal-box settings-box" style="background:var(--surface);border:1px solid rgba(255,255,255,0.08);color:var(--text);max-width:380px;width:90%;padding:1.5rem;border-radius:12px">
-      <h3 style="margin:0 0 0.25rem;font-size:1rem">Ajustes</h3>
-      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 1rem">Acciones de mantenimiento</p>
-      <button id="clear-db-btn" class="clear-btn" style="width:100%">Limpiar base de datos</button>
-      <p style="font-size:0.7rem;color:var(--text-muted);margin:0.5rem 0 0;text-align:center">Borra corrections, debates, mensajes, expresiones y logs. Mantiene patterns.</p>
-      <button id="settings-close" class="clear-btn" style="width:100%;margin-top:0.75rem;border-color:rgba(255,255,255,0.15);color:var(--text)">Cerrar</button>
+      <h3 style="margin:0 0 0.25rem;font-size:1rem">Settings</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 1rem">Maintenance actions</p>
+      <button id="clear-db-btn" class="clear-btn" style="width:100%">Clear database</button>
+      <p style="font-size:0.7rem;color:var(--text-muted);margin:0.5rem 0 0;text-align:center">Deletes corrections, debates, messages, expressions and logs. Keeps patterns.</p>
+      <button id="settings-close" class="clear-btn" style="width:100%;margin-top:0.75rem;border-color:rgba(255,255,255,0.15);color:var(--text)">Close</button>
     </div>
   </div>
 
   <div id="ctx-menu" class="ctx-menu" style="display:none">
-    <button id="ctx-add-expression" class="ctx-item">Guardar en Nuevas Expresiones</button>
-    <button id="ctx-translate" class="ctx-item">Traducir al español</button>
+    <button id="ctx-add-expression" class="ctx-item">Save to New Expressions</button>
+    <button id="ctx-translate" class="ctx-item">Translate to Spanish</button>
   </div>
 
   <div id="translation-popup" class="translation-popup" style="display:none">
-    <button id="translation-close" class="translation-close" title="Cerrar">×</button>
-    <div class="translation-label">Traducción</div>
+    <button id="translation-close" class="translation-close" title="Close">×</button>
+    <div class="translation-label">Translation</div>
     <div id="translation-content" class="translation-content"></div>
   </div>
 
@@ -108,19 +108,19 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     sModal?.addEventListener('click', (e) => { if (e.target === sModal) sModal.classList.add('hidden'); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') sModal?.classList.add('hidden'); });
     clearBtn?.addEventListener('click', async () => {
-      if (!confirm('¿Limpiar base de datos? Se borrarán corrections, debates, mensajes, expresiones y logs. Esta acción no se puede deshacer.')) return;
+      if (!confirm('Clear database? Corrections, debates, messages, expressions and logs will be deleted. This cannot be undone.')) return;
       clearBtn.disabled = true;
-      clearBtn.textContent = 'Limpiando...';
+      clearBtn.textContent = 'Clearing...';
       try {
         const res = await fetch('/api/clear-all', { method: 'POST' });
         const data = await res.json();
         if (data.error) alert(data.error);
         else location.reload();
       } catch (e) {
-        alert('Error al limpiar');
+        alert('Error clearing');
       } finally {
         clearBtn.disabled = false;
-        clearBtn.textContent = 'Limpiar base de datos';
+        clearBtn.textContent = 'Clear database';
         sModal?.classList.add('hidden');
       }
     });
@@ -194,7 +194,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     const results = document.getElementById('trace-results');
     if (!results) return;
 
-    // Si no existe contenedor, crearlo sin borrar el status que ya está arriba
+    // If container doesn't exist, create it without deleting the status at the top
     let container = results.querySelector('.trace-cards') as HTMLElement | null;
     if (!container) {
       const empty = results.querySelector('.trace-empty');
@@ -230,9 +230,9 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       isFirstLoad = false;
 
       if (data.analyzing && data.queueLength > 0) {
-        updateStatusMessage(`Analizando... (${data.queueLength} en cola)`);
+        updateStatusMessage(`Analyzing... (${data.queueLength} in queue)`);
       } else if (data.analyzing) {
-        updateStatusMessage('Analizando tu frase');
+        updateStatusMessage('Analyzing your sentence');
       } else {
         removeStatusMessage();
       }
@@ -253,9 +253,9 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 
     // Update status messages (siempre arriba via prepend)
     if (data.analyzing && data.queueLength > 0) {
-      updateStatusMessage(`Analizando... (${data.queueLength} en cola)`);
+      updateStatusMessage(`Analyzing... (${data.queueLength} in queue)`);
     } else if (data.analyzing) {
-      updateStatusMessage('Analizando tu frase');
+      updateStatusMessage('Analyzing your sentence');
     } else {
       removeStatusMessage();
     }
@@ -283,7 +283,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     const btn = document.getElementById('clear-record');
     if (!btn) return;
     btn.disabled = true;
-    btn.textContent = 'Limpiando...';
+    btn.textContent = 'Clearing...';
     try {
       const res = await fetch('/api/clear-all', {
         method: 'POST',
@@ -295,15 +295,15 @@ import AudioRecorder from '../components/AudioRecorder.astro';
         alert(`Error: ${data.error}`);
       } else {
         const results = document.getElementById('trace-results');
-        if (results) results.innerHTML = '<p class="trace-empty">Correcciones limpiadas.</p>';
+        if (results) results.innerHTML = '<p class="trace-empty">Corrections cleared.</p>';
         lastCorrectionId = 0;
         isFirstLoad = true;
       }
     } catch (e) {
-      alert('Error al limpiar el registro.');
+      alert('Error clearing trace.');
     }
     btn.disabled = false;
-    btn.textContent = 'Limpiar registro';
+    btn.textContent = 'Clean trace';
   });
 
   // Pomodoro timer: 25 min work / 5 min break, with pause/resume
@@ -363,11 +363,15 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
     }
 
+    const playIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    const pauseIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+
     function render() {
       timeEl.textContent = fmt(remaining);
-      toggleBtn.textContent = running ? 'Pausar' : 'Iniciar';
+      toggleBtn.innerHTML = running ? pauseIcon : playIcon;
+      toggleBtn.setAttribute('aria-label', running ? 'Pause' : 'Start');
+      toggleBtn.classList.toggle('active', running);
       toggleBtn.classList.toggle('hidden', remaining === 0);
-      resetBtn.textContent = (mode === 'work' && remaining === WORK_MIN * 60 && !running) ? 'Reiniciar' : 'Reiniciar';
     }
 
     function tick() {
@@ -384,7 +388,6 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       playRing();
       mode = mode === 'work' ? 'break' : 'work';
       remaining = (mode === 'work' ? WORK_MIN : BREAK_MIN) * 60;
-      if (toggleBtn) toggleBtn.textContent = 'Iniciar';
       startTimer();
     }
 
@@ -439,7 +442,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
             .map((e) => `
               <div class="miniTarjeta">
                 <span class="miniTarjeta-text">${e.expression}</span>
-                <button class="miniTarjeta-check" data-id="${e.id}" title="Marcar como aprendida">✔</button>
+                <button class="miniTarjeta-check" data-id="${e.id}" title="Mark as learned">✔</button>
               </div>`)
             .join('');
         }
@@ -564,7 +567,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     positionPopup(translationPopup, x, y);
 
     translationPopup.style.display = 'block';
-    translationContent.textContent = 'Traduciendo…';
+    translationContent.textContent = 'Translating…';
 
     try {
       const res = await fetch('/api/translate', {
@@ -578,11 +581,11 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       } else if (data.translated) {
         translationContent.textContent = data.translated;
       } else {
-        translationContent.textContent = 'No se pudo traducir el texto.';
+        translationContent.textContent = 'Could not translate text.';
       }
     } catch (error) {
       console.error('Error translating text:', error);
-      translationContent.textContent = 'Error de conexión al traducir.';
+      translationContent.textContent = 'Translation connection error.';
     }
   });
 
@@ -980,6 +983,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     display: flex;
     gap: 0.5rem;
     width: 100%;
+    justify-content: center;
   }
 
   .pomodoro-btn {
@@ -996,9 +1000,41 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
   }
 
+  .pomodoro-btn.icon {
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: none;
+    color: var(--text-muted);
+  }
+
+  .pomodoro-btn.icon:hover {
+    background: rgba(255,255,255,0.12);
+    color: var(--text);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .pomodoro-btn.icon.active {
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: white;
+    border-color: transparent;
+  }
+
   .pomodoro-btn:hover {
     transform: translateY(-1px);
     box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+
+  .pomodoro-btn.icon:hover {
+    transform: none;
+    box-shadow: none;
   }
 
   .pomodoro-btn.ghost {
