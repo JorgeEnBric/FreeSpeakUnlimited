@@ -246,6 +246,10 @@ export async function getUnanalyzedCount(): Promise<number> {
 export async function clearAll(): Promise<void> {
   const d = await getDb();
   d.run('DELETE FROM corrections');
+  d.run('DELETE FROM debate_corrections');
+  d.run('DELETE FROM debates');
+  d.run('DELETE FROM messages');
+  d.run('DELETE FROM new_expressions');
   d.run('DELETE FROM logs');
   save();
 }

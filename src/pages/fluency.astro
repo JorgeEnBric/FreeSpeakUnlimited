@@ -7,13 +7,16 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
 <Layout title="Fluency Practice">
   <main class="app">
     <header class="header">
+      <button id="settings-btn" class="gear-btn" aria-label="Ajustes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
       <div class="header-main">
         <h1>Fluency Practice</h1>
-        <p class="subtitle">Just turn on your microphone and speak openly</p>
+        <p class="subtitle">Debate un tema y habla 1:00-1:20 con pausas ilimitadas</p>
       </div>
       <nav class="nav-links nav-toggle">
-        <a href="/" class="nav-link">Chat mode</a>
-        <a href="/fluency" class="nav-link active">Debate mode</a>
+        <a href="/" class="nav-link">Chat Libre</a>
+        <a href="/fluency" class="nav-link active">Fluency 1:00-1:20</a>
       </nav>
     </header>
 
@@ -55,6 +58,16 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
     </div>
   </div>
 
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal-box settings-box" style="background:var(--surface);border:1px solid rgba(255,255,255,0.08);color:var(--text);max-width:380px;width:90%;padding:1.5rem;border-radius:12px">
+      <h3 style="margin:0 0 0.25rem;font-size:1rem">Ajustes</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 1rem">Acciones de mantenimiento</p>
+      <button id="clear-db-btn" class="clear-btn" style="width:100%">Limpiar base de datos</button>
+      <p style="font-size:0.7rem;color:var(--text-muted);margin:0.5rem 0 0;text-align:center">Borra corrections, debates, mensajes, expresiones y logs. Mantiene patterns.</p>
+      <button id="settings-close" class="clear-btn" style="width:100%;margin-top:0.75rem;border-color:rgba(255,255,255,0.15);color:var(--text)">Cerrar</button>
+    </div>
+  </div>
+
   <div id="ctx-menu" class="ctx-menu" style="display:none">
     <button id="ctx-add-expression" class="ctx-item">Guardar en Nuevas Expresiones</button>
     <button id="ctx-translate" class="ctx-item">Traducir al español</button>
@@ -74,6 +87,35 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       const modal = document.getElementById('warmup-modal');
       if (modal) modal.classList.add('hidden');
     }
+  })();
+
+  // Settings modal
+  (() => {
+    const gear = document.getElementById('settings-btn');
+    const sModal = document.getElementById('settings-modal');
+    const sClose = document.getElementById('settings-close');
+    const clearBtn = document.getElementById('clear-db-btn') as HTMLButtonElement | null;
+    gear?.addEventListener('click', () => sModal?.classList.remove('hidden'));
+    sClose?.addEventListener('click', () => sModal?.classList.add('hidden'));
+    sModal?.addEventListener('click', (e) => { if (e.target === sModal) sModal.classList.add('hidden'); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') sModal?.classList.add('hidden'); });
+    clearBtn?.addEventListener('click', async () => {
+      if (!confirm('¿Limpiar base de datos? Se borrarán corrections, debates, mensajes, expresiones y logs. Esta acción no se puede deshacer.')) return;
+      clearBtn.disabled = true;
+      clearBtn.textContent = 'Limpiando...';
+      try {
+        const res = await fetch('/api/clear-all', { method: 'POST' });
+        const data = await res.json();
+        if (data.error) alert(data.error);
+        else location.reload();
+      } catch (e) {
+        alert('Error al limpiar');
+      } finally {
+        clearBtn.disabled = false;
+        clearBtn.textContent = 'Limpiar base de datos';
+        sModal?.classList.add('hidden');
+      }
+    });
   })();
 
   // Debate topic handling
@@ -359,6 +401,8 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
   .nav-links.nav-toggle .nav-link:last-child { border-right: none; }
   .nav-links.nav-toggle .nav-link.active { background: linear-gradient(135deg, var(--primary), #8b5cf6); color: white; }
   .nav-links.nav-toggle .nav-link:hover:not(.active) { background: rgba(255,255,255,0.08); color: var(--text); }
+  .gear-btn { position: absolute; top: 0.75rem; left: 1rem; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(255,255,255,0.05); color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
+  .gear-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); border-color: var(--primary); }
   .main-content { display: flex; flex: 1; gap: 1rem; min-height: 0; }
   .chat-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
   .topic-card { background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; border-left: 3px solid var(--primary); }
