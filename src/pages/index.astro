@@ -15,8 +15,8 @@ import AudioRecorder from '../components/AudioRecorder.astro';
         <p class="subtitle">Practice speaking English without limits</p>
       </div>
       <nav class="nav-links nav-toggle">
-        <a href="/" class="nav-link active">Chat Libre</a>
-        <a href="/fluency" class="nav-link">Fluency 1:00-1:20</a>
+        <a href="/" class="nav-link active">Chat mode</a>
+        <a href="/fluency" class="nav-link">Debate mode</a>
       </nav>
     </header>
 
@@ -32,10 +32,10 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       </div>
 
       <aside class="trace-panel">
-        <h3>Trace de Correcciones</h3>
-        <button id="clear-record" class="clear-btn">Limpiar registro</button>
+        <h3>Automatic corrections</h3>
+        <button id="clear-record" class="clear-btn">Clean trace</button>
         <div id="trace-results" class="trace-results">
-          <p class="trace-empty">Habla para recibir correcciones automáticas</p>
+          <p class="trace-empty">No expressions to show yet </p>
         </div>
       </aside>
 
@@ -49,10 +49,10 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 
         <div class="panel-divider"></div>
 
-        <h3 class="expressions-title">Nuevas Expresiones</h3>
-        <p class="expressions-hint">Selecciona texto en cualquier parte y haz clic derecho para guardarlo aquí</p>
+        <h3 class="expressions-title">New expressions</h3>
+        <p class="expressions-hint">Select text anywhere and right-click to save it here</p>
         <div id="expressions-list" class="expressions-list">
-          <p class="expressions-empty">Aún no hay expresiones guardadas</p>
+          <p class="expressions-empty">No expressions saved yet</p>
         </div>
       </aside>
     </div>
@@ -169,7 +169,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     if (!results) return;
 
     if (!corrections || corrections.length === 0) {
-      results.innerHTML = '<p class="trace-empty">Habla para recibir correcciones automáticas</p>';
+      results.innerHTML = '<p class="trace-empty">Speak to get automatic corrections</p>';
       return;
     }
 
@@ -433,7 +433,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       const data = await res.json();
       if (data.expressions) {
         if (data.expressions.length === 0) {
-          expressionsList.innerHTML = '<p class="expressions-empty">Aún no hay expresiones guardadas</p>';
+          expressionsList.innerHTML = '<p class="expressions-empty">No expressions saved yet</p>';
         } else {
           expressionsList.innerHTML = data.expressions
             .map((e) => `
