@@ -13,7 +13,7 @@ RESPONSE GUIDELINES:
 - Keep replies short and conversational (1-3 sentences)
 - Use vocabulary a language learner can understand`;
 
-export const CORRECTIONS_SYSTEM_PROMPT = 'You are a friendly English teacher helping a student improve. Rules:\n1. Fix ALL errors: tense, word order, prepositions, articles, pronouns, collocations.\n2. PARAPHRASE the sentence so it sounds natural and idiomatic: rewrite it completely.\n3. Do NOT use **bold** markers in Correction or Tip.\n4. In the **Sentence:** field, copy the original text EXACTLY without any changes.\n5. Write the Tip in a warm, encouraging way, like explaining to a friend.\n6. Assign the most specific pattern code from this list: ' + PATTERN_LIST.join(', ');
+export const CORRECTIONS_SYSTEM_PROMPT = 'You are a friendly English teacher helping a student improve. Rules:\n1. Fix ALL errors: tense, word order, prepositions, articles, pronouns, collocations.\n2. PARAPHRASE the sentence so it sounds natural and idiomatic: rewrite it completely.\n3. Do NOT use **bold** markers in Correction.\n4. Assign the most specific pattern code from this list: ' + PATTERN_LIST.join(', ');
 
 export const SUGGESTION_SYSTEM_PROMPT = `You are an English autocorrection assistant.
 A sentence is provided with the placeholder ___ in the position of one missing word.

@@ -26,7 +26,10 @@ export const POST: APIRoute = async ({ request }) => {
 
     const { initDB, insertMessage } = await import('../../lib/database');
     await initDB();
-    await insertMessage(text);
+    const messageId = await insertMessage(text);
+
+    const { notifyNewMessage } = await import('../../lib/corrections');
+    notifyNewMessage(messageId);
 
     const encoder = new TextEncoder();
     const t0 = Date.now();

@@ -31,11 +31,25 @@ export async function initDB(): Promise<void> {
     message_id INTEGER NOT NULL,
     original TEXT NOT NULL,
     corrected TEXT,
-    tip TEXT,
     pattern_code TEXT NOT NULL,
+    processing_ms INTEGER,
     created_at TEXT DEFAULT (datetime('now')),
     FOREIGN KEY (message_id) REFERENCES messages(id)
   )`);
+  // Migración: eliminar columna tip si existe en DBs antiguas
+  try {
+    const cols = d.exec(`PRAGMA table_info(corrections)`);
+    if (cols.length && cols[0].values.some((r: any) => r[1] === 'tip')) {
+      d.run(`ALTER TABLE corrections DROP COLUMN tip`);
+    }
+  } catch { /* sqlite <3.35 o columna ya eliminada */ }
+  // Migración: añadir processing_ms si no existe
+  try {
+    const cols2 = d.exec(`PRAGMA table_info(corrections)`);
+    if (cols2.length && !cols2[0].values.some((r: any) => r[1] === 'processing_ms')) {
+      d.run(`ALTER TABLE corrections ADD COLUMN processing_ms INTEGER`);
+    }
+  } catch { /* ya existe */ }
   d.run(`CREATE TABLE IF NOT EXISTS patterns (
     code TEXT PRIMARY KEY,
     label TEXT NOT NULL,
@@ -115,8 +129,9 @@ export async function getLogs(limit = 50): Promise<{ id: number; source: string;
 export async function insertMessage(text: string): Promise<number> {
   const d = await getDb();
   d.run('INSERT INTO messages (text, analyzed) VALUES (?, 0)', [text]);
+  const id = (d.exec('SELECT last_insert_rowid()')[0].values[0][0]) as number;
   save();
-  return (d.exec('SELECT last_insert_rowid()')[0].values[0][0]) as number;
+  return id;
 }
 
 export async function getPendingMessages(): Promise<{ id: number; text: string }[]> {
@@ -126,17 +141,47 @@ export async function getPendingMessages(): Promise<{ id: number; text: string }
   return rows[0].values.map((r: any) => ({ id: r[0] as number, text: r[1] as string }));
 }
 
+export async function getMessageById(id: number): Promise<{ id: number; text: string } | null> {
+  const d = await getDb();
+  const rows = d.exec('SELECT id, text FROM messages WHERE id = ?', [id]);
+  if (!rows.length || !rows[0].values.length) return null;
+  return { id: rows[0].values[0][0] as number, text: rows[0].values[0][1] as string };
+}
+
+export async function getNewCorrectionsSince(lastId: number): Promise<{
+  id: number; code: string; label: string;
+  original: string; corrected: string; processing_ms: number | null;
+}[]> {
+  const d = await getDb();
+  const rows = d.exec(`
+    SELECT c.id, p.code, p.label, c.original, c.corrected, c.processing_ms
+    FROM corrections c
+    JOIN patterns p ON p.code = c.pattern_code
+    WHERE c.id > ?
+    ORDER BY c.created_at ASC
+  `, [lastId]);
+  if (!rows.length) return [];
+  return rows[0].values.map((r: any) => ({
+    id: r[0] as number,
+    code: r[1] as string,
+    label: r[2] as string,
+    original: r[3] as string,
+    corrected: r[4] as string,
+    processing_ms: r[5] as number | null,
+  }));
+}
+
 export async function insertCorrection(
   messageId: number,
   original: string,
   corrected: string,
-  tip: string,
-  patternCode: string
+  patternCode: string,
+  processingMs?: number | null
 ): Promise<void> {
   const d = await getDb();
   d.run(
-    'INSERT INTO corrections (message_id, original, corrected, tip, pattern_code) VALUES (?, ?, ?, ?, ?)',
-    [messageId, original, corrected, tip, patternCode]
+    'INSERT INTO corrections (message_id, original, corrected, pattern_code, processing_ms) VALUES (?, ?, ?, ?, ?)',
+    [messageId, original, corrected, patternCode, processingMs ?? null]
   );
   save();
 }
@@ -150,32 +195,25 @@ export async function markAnalyzed(messageIds: number[]): Promise<void> {
 }
 
 export async function getCorrectionsByPattern(): Promise<{
-  code: string;
-  label: string;
-  examples: { original: string; corrected: string; tip: string }[];
+  id: number; code: string; label: string;
+  original: string; corrected: string; processing_ms: number | null;
 }[]> {
   const d = await getDb();
   const rows = d.exec(`
-    SELECT p.code, p.label, c.original, c.corrected, c.tip, c.created_at
+    SELECT c.id, p.code, p.label, c.original, c.corrected, c.processing_ms
     FROM corrections c
     JOIN patterns p ON p.code = c.pattern_code
-    ORDER BY c.created_at DESC
+    ORDER BY c.id DESC
   `);
   if (!rows.length) return [];
-  const map = new Map<string, { code: string; label: string; examples: { original: string; corrected: string; tip: string }[]; lastCreated: string }>();
-  for (const r of rows[0].values) {
-    const code = r[0] as string;
-    const label = r[1] as string;
-    const createdAt = r[5] as string;
-    if (!map.has(code)) map.set(code, { code, label, examples: [], lastCreated: createdAt });
-    map.get(code)!.examples.push({
-      original: r[2] as string,
-      corrected: r[3] as string,
-      tip: r[4] as string,
-    });
-    if (createdAt > map.get(code)!.lastCreated) map.get(code)!.lastCreated = createdAt;
-  }
-  return Array.from(map.values()).sort((a, b) => b.lastCreated.localeCompare(a.lastCreated));
+  return rows[0].values.map((r: any) => ({
+    id: r[0] as number,
+    code: r[1] as string,
+    label: r[2] as string,
+    original: r[3] as string,
+    corrected: r[4] as string,
+    processing_ms: r[5] as number | null,
+  }));
 }
 
 export async function getUnanalyzedCount(): Promise<number> {

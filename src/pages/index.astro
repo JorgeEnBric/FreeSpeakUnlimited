@@ -24,10 +24,9 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 
       <aside class="trace-panel">
         <h3>Trace de Correcciones</h3>
-        <button id="generate-corrections" class="trace-btn">Generar Correcciones</button>
         <button id="clear-record" class="clear-btn">Limpiar registro</button>
         <div id="trace-results" class="trace-results">
-          <p class="trace-empty">Presiona el botón para generar correcciones de tu conversación</p>
+          <p class="trace-empty">Habla para recibir correcciones automáticas</p>
         </div>
       </aside>
 
@@ -42,7 +41,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
         <div class="panel-divider"></div>
 
         <h3 class="expressions-title">Nuevas Expresiones</h3>
-        <p class="expressions-hint">Selecciona una frase en el chat y haz clic derecho para guardarla aquí</p>
+        <p class="expressions-hint">Selecciona texto en cualquier parte y haz clic derecho para guardarlo aquí</p>
         <div id="expressions-list" class="expressions-list">
           <p class="expressions-empty">Aún no hay expresiones guardadas</p>
         </div>
@@ -79,56 +78,158 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
   })();
 
-  document.getElementById('generate-corrections')?.addEventListener('click', async () => {
-    const btn = document.getElementById('generate-corrections');
+  // Polling for automatic corrections with incremental updates
+  let corrPollingId: ReturnType<typeof setInterval> | null = null;
+  let lastCorrectionId = 0;
+  let isFirstLoad = true;
+
+  function updateStatusMessage(msg: string) {
     const results = document.getElementById('trace-results');
-    if (!btn || !results) return;
-    btn.disabled = true;
-    btn.textContent = 'Generando...';
-    results.innerHTML = '<p class="trace-loading"><span class="timer" id="corr-timer">00:00</span> Analyzing your speech...</p>';
-    const corrTimer = document.getElementById('corr-timer');
-    const corrStart = Date.now();
-    const corrInterval = setInterval(() => {
-      const e = Math.floor((Date.now() - corrStart) / 1000);
-      corrTimer.textContent = `${String(Math.floor(e/60)).padStart(2,'0')}:${String(e%60).padStart(2,'0')}`;
-    }, 1000);
-    function showResult(html) { clearInterval(corrInterval); results.innerHTML = html; }
-    try {
-      const res = await fetch('/api/generate-corrections', { method: 'POST' });
-      const data = await res.json();
-      if (data.error) {
-        showResult(`<div class="trace-error">${data.error}</div>`);
-      } else if (data.corrections && data.corrections.length === 0 && data.unanalyzed === 0) {
-        showResult('<div class="trace-empty">No hay correcciones aún. Empieza a hablar primero.</div>');
-      } else if (data.corrections && data.corrections.length > 0) {
-        let html = '<div class="trace-cards">';
-        for (const group of data.corrections) {
-          html += `
-            <div class="corr-group">
-              <div class="corr-group-header">
-                <span class="corr-group-code">${group.code}</span>
-                <span class="corr-group-label">${group.label}</span>
-              </div>`;
-          for (const ex of group.examples) {
-            html += `
-              <div class="corr-card">
-                <div class="corr-row"><span class="corr-bad">${ex.original}</span></div>
-                <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${ex.corrected || ex.tip}</span></div>
-              </div>`;
-          }
-          html += '</div>';
-        }
-        html += '</div>';
-        showResult(html);
-      } else if (data.unanalyzed > 0) {
-        showResult(`<div class="trace-loading">${data.unanalyzed} mensajes pendientes por analizar...</div>`);
-      }
-    } catch (e) {
-      showResult('<p class="trace-error">Error generating corrections.</p>');
+    if (!results) return;
+    let statusEl = results.querySelector('.trace-status') as HTMLElement | null;
+    if (!statusEl) {
+      statusEl = document.createElement('p');
+      statusEl.className = 'trace-status trace-loading';
     }
-    btn.disabled = false;
-    btn.textContent = 'Generar Correcciones';
-  });
+    statusEl.textContent = msg;
+    // Siempre al principio, por delante de .trace-cards
+    if (results.firstChild !== statusEl) {
+      results.prepend(statusEl);
+    }
+  }
+
+  function removeStatusMessage() {
+    const results = document.getElementById('trace-results');
+    if (!results) return;
+    const statusEl = results.querySelector('.trace-status');
+    if (statusEl) statusEl.remove();
+  }
+
+  function renderCard(corr: any): string {
+    const hasTime = corr.processing_ms != null;
+    const timeLabel = hasTime ? Math.round(corr.processing_ms / 1000) + 's' : '-';
+    return `
+        <div class="corr-card" data-id="${corr.id}">
+          <div class="corr-header"><span class="corr-time">${timeLabel}</span><span class="corr-tag">${corr.label || corr.code}</span></div>
+          <div class="corr-row"><span class="corr-bad">${corr.original}</span></div>
+          <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${corr.corrected}</span></div>
+        </div>`;
+  }
+
+  function renderAllCorrections(corrections: any[]) {
+    const results = document.getElementById('trace-results');
+    if (!results) return;
+
+    if (!corrections || corrections.length === 0) {
+      results.innerHTML = '<p class="trace-empty">Habla para recibir correcciones automáticas</p>';
+      return;
+    }
+
+    let html = '<div class="trace-cards">';
+    for (const corr of corrections) {
+      html += renderCard(corr);
+    }
+    html += '</div>';
+    results.innerHTML = html;
+
+    // Set lastCorrectionId from loaded data
+    let maxId = 0;
+    for (const corr of corrections) {
+      if (corr.id > maxId) maxId = corr.id;
+    }
+    if (maxId > lastCorrectionId) lastCorrectionId = maxId;
+  }
+
+  function appendNewCorrections(corrections: any[]) {
+    if (!corrections || corrections.length === 0) return;
+
+    const results = document.getElementById('trace-results');
+    if (!results) return;
+
+    // Si no existe contenedor, crearlo sin borrar el status que ya está arriba
+    let container = results.querySelector('.trace-cards') as HTMLElement | null;
+    if (!container) {
+      const empty = results.querySelector('.trace-empty');
+      if (empty) empty.remove();
+      container = document.createElement('div');
+      container.className = 'trace-cards';
+      const statusEl = results.querySelector('.trace-status');
+      if (statusEl) {
+        statusEl.after(container);
+      } else {
+        results.appendChild(container);
+      }
+    }
+
+    // Corrections arrive oldest-first; prepending each leaves the newest on top (id DESC)
+    for (const corr of corrections) {
+      const card = document.createElement('div');
+      card.innerHTML = renderCard(corr).trim();
+      const cardEl = card.firstElementChild as HTMLElement;
+      if (cardEl && container) container.prepend(cardEl);
+      if (corr.id > lastCorrectionId) lastCorrectionId = corr.id;
+    }
+  }
+
+  function renderCorrectionsPanel(data: any) {
+    const results = document.getElementById('trace-results');
+    if (!results) return;
+
+    // Initial load: acepta ambos payloads (corrections o newCorrections)
+    if (isFirstLoad) {
+      const initial = (data.corrections ?? data.newCorrections ?? []) as any[];
+      renderAllCorrections(initial);
+      isFirstLoad = false;
+
+      if (data.analyzing && data.queueLength > 0) {
+        updateStatusMessage(`Analizando... (${data.queueLength} en cola)`);
+      } else if (data.analyzing) {
+        updateStatusMessage('Analizando tu frase');
+      } else {
+        removeStatusMessage();
+      }
+      return;
+    }
+
+    // Incremental update: caso normal newCorrections (ASC -> prepend deja DESC)
+    if (data.newCorrections && data.newCorrections.length > 0) {
+      appendNewCorrections(data.newCorrections);
+    } else if (data.corrections && data.corrections.length > 0) {
+      // Fallback A-light: backend devolvió corrections con ?since=0 (ej. DB vacía al inicio)
+      // Filtrar sin flicker: solo nuevos id y ordenar ASC para prepend correcto
+      const nuevos = (data.corrections as any[])
+        .filter((c: any) => c.id > lastCorrectionId)
+        .sort((a: any, b: any) => a.id - b.id);
+      if (nuevos.length > 0) appendNewCorrections(nuevos);
+    }
+
+    // Update status messages (siempre arriba via prepend)
+    if (data.analyzing && data.queueLength > 0) {
+      updateStatusMessage(`Analizando... (${data.queueLength} en cola)`);
+    } else if (data.analyzing) {
+      updateStatusMessage('Analizando tu frase');
+    } else {
+      removeStatusMessage();
+    }
+  }
+
+  async function pollCorrections() {
+    try {
+      const res = await fetch(`/api/corrections-status?since=${lastCorrectionId}`);
+      const data = await res.json();
+      renderCorrectionsPanel(data);
+    } catch (e) {
+      console.error('[pollCorrections]', e);
+    }
+  }
+
+  function startCorrectionsPolling() {
+    if (corrPollingId) return;
+    pollCorrections();
+    corrPollingId = setInterval(pollCorrections, 3000);
+  }
+
+  startCorrectionsPolling();
 
   document.getElementById('clear-record')?.addEventListener('click', async () => {
     const btn = document.getElementById('clear-record');
@@ -147,6 +248,8 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       } else {
         const results = document.getElementById('trace-results');
         if (results) results.innerHTML = '<p class="trace-empty">Correcciones limpiadas.</p>';
+        lastCorrectionId = 0;
+        isFirstLoad = true;
       }
     } catch (e) {
       alert('Error al limpiar el registro.');
@@ -313,7 +416,7 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     }
   });
 
-  // Custom context menu on chat messages: add selected text to NewExpressions or translate it
+  // Custom context menu on any selected text (global, excluye #transcript-modal): add to NewExpressions or translate
   const chatDisplay = document.getElementById('chat');
   const contextMenu = document.getElementById('ctx-menu');
   const translationPopup = document.getElementById('translation-popup');
@@ -336,18 +439,21 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     element.style.top = `${top}px`;
   }
 
-  chatDisplay?.addEventListener('contextmenu', (event) => {
-    const selection = window.getSelection()?.toString().trim();
+  document.addEventListener('contextmenu', (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('#ctx-menu, #translation-popup, #warmup-modal')) return;
+    if (target.closest('#transcript-modal')) return;
+    const selection = window.getSelection()?.toString().trim() ?? '';
     if (!selection) return;
 
     event.preventDefault();
     contextMenuItem = { expression: selection, text: selection, x: event.clientX, y: event.clientY };
 
     if (contextMenu) {
-      contextMenu.style.left = `${event.clientX}px`;
-      contextMenu.style.top = `${event.clientY}px`;
       contextMenu.style.display = 'block';
+      positionPopup(contextMenu, event.clientX, event.clientY);
     }
+    hideTranslationPopup();
   });
 
   function hideContextMenu() {
@@ -564,30 +670,6 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     font-size: 1.1rem;
   }
 
-  .trace-btn {
-    padding: 0.6rem 1rem;
-    border: none;
-    border-radius: 8px;
-    background: linear-gradient(135deg, var(--primary), #8b5cf6);
-    color: white;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.2s;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
-  }
-
-  .trace-btn:hover:not(:disabled) {
-    transform: translateY(-1px);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
-  }
-
-  .trace-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    transform: none;
-  }
-
   .clear-btn {
     padding: 0.6rem 1rem;
     border: 1px solid var(--recording, #dc2626);
@@ -653,6 +735,39 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     border-radius: 4px;
   }
 
+  .corr-header {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+
+  .corr-time {
+    align-self: flex-start;
+    font-size: 0.6rem;
+    font-weight: 700;
+    font-family: monospace;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: 0.3px;
+    color: var(--text-muted);
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0.15rem 0.35rem;
+    border-radius: 4px;
+    min-width: 2.2em;
+    text-align: center;
+  }
+
+  .corr-tag {
+    align-self: flex-start;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--primary);
+    background: rgba(59, 130, 246, 0.1);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+  }
+
   .corr-group-label {
     font-size: 0.8rem;
     color: var(--text-muted);
@@ -676,12 +791,12 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     border-radius: 5px;
   }
 
-  .corr-row:first-child {
+  .corr-row:first-of-type {
     background: rgba(248, 113, 113, 0.08);
     border-left: 3px solid #f87171;
   }
 
-  .corr-row:last-child {
+  .corr-row:last-of-type {
     background: rgba(74, 222, 128, 0.08);
     border-left: 3px solid #4ade80;
   }
