@@ -1,0 +1,719 @@
+---
+---
+
+<div class="recorder-container">
+  <button id="fluency-record-btn" class="record-button" aria-label="Record fluency">
+    <svg id="fluency-mic-icon" class="mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+      <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+      <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+      <line x1="12" y1="19" x2="12" y2="23"></line>
+      <line x1="8" y1="23" x2="16" y2="23"></line>
+    </svg>
+    <svg id="fluency-stop-icon" class="stop-icon hidden" viewBox="0 0 24 24" fill="currentColor">
+      <rect x="6" y="6" width="12" height="12" rx="2"></rect>
+    </svg>
+  </button>
+  <div class="recorder-actions">
+    <p id="fluency-status" class="status"><span id="fluency-timer" class="fluency-timer">00:00</span> Click to start recording</p>
+    <button id="fluency-pause-btn" class="pause-button hidden" aria-label="Pause recording">Pausar</button>
+    <button id="fluency-cancel-btn" class="cancel-button hidden" aria-label="Cancel recording">Cancelar</button>
+  </div>
+
+  <div id="fluency-transcript-modal" class="transcript-modal hidden">
+    <div class="transcript-box">
+      <h3 class="transcript-title">Tu intervención</h3>
+      <p class="transcript-hint">Revisa la transcripción. Corrige si es necesario y presiona Enviar. Debe durar 1:00-1:20.</p>
+      <div id="fluency-transcript-edit" class="transcript-edit" contenteditable="true" role="textbox" aria-multiline="false" spellcheck="false"></div>
+      <div id="fluency-suggest-pop" class="suggest-pop hidden">
+        <span class="suggest-label">Sugerencia:</span>
+        <button id="fluency-suggest-insert" class="suggest-insert" type="button">…</button>
+      </div>
+      <div class="transcript-actions">
+        <button id="fluency-transcript-replay" class="transcript-btn ghost replay" type="button">&#9654; Escuchar audio</button>
+        <button id="fluency-transcript-cancel" class="transcript-btn ghost" type="button">Descartar</button>
+        <button id="fluency-transcript-confirm" class="transcript-btn" type="button">Enviar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  let mediaRecorder = null;
+  let mediaStream = null;
+  let audioChunks = [];
+  let isRecording = false;
+  let isPaused = false;
+  let isCancelled = false;
+  let recordingStart = 0;
+  let pausedAccum = 0;
+  let recordingTimer = null;
+  let recordingDurationMs = 0;
+  let fluencyHistory = [];
+  let audioCtx = null;
+  let nextPlayTime = 0;
+  let activeSources = [];
+  let currentChatAbort = null;
+
+  const recordBtn = document.getElementById('fluency-record-btn');
+  const pauseBtn = document.getElementById('fluency-pause-btn');
+  const cancelBtn = document.getElementById('fluency-cancel-btn');
+  const micIcon = document.getElementById('fluency-mic-icon');
+  const stopIcon = document.getElementById('fluency-stop-icon');
+  const status = document.getElementById('fluency-status');
+  const timerEl = document.getElementById('fluency-timer');
+  const chatDisplay = document.getElementById('fluency-chat');
+  const topicEl = document.getElementById('fluency-topic-text');
+
+  function getCurrentTopic() {
+    const el = document.getElementById('fluency-topic-text');
+    return el ? el.textContent.trim() : '';
+  }
+
+  function addMessage(type, text, empty = false) {
+    if (!chatDisplay) return null;
+    const messageDiv = document.createElement('div');
+    messageDiv.className = `message ${type}`;
+    const replayBtn = type === 'assistant' ? `<button class="replay-btn" aria-label="Replay audio">&#9654;</button>` : '';
+    const avatar = type === 'assistant' ? `<div class="avatar">AI</div>` : '';
+    messageDiv.innerHTML = `
+      ${avatar}
+      <div class="content">
+        <p>${empty ? '' : text}</p>
+      </div>
+      ${replayBtn}
+    `;
+    if (type === 'assistant') {
+      const btn = messageDiv.querySelector('.replay-btn');
+      btn?.addEventListener('click', () => {
+        const p = messageDiv.querySelector('p');
+        const t = p ? p.textContent : text;
+        if (t) replayText(t, btn);
+      });
+    }
+    chatDisplay.prepend(messageDiv);
+    return messageDiv;
+  }
+
+  // Historial sin persistencia para debate continuo
+  window.addEventListener('fluency-new-topic', () => {
+    fluencyHistory = [];
+    if (chatDisplay) chatDisplay.innerHTML = '';
+  });
+
+  function initAudioCtx() {
+    if (!audioCtx) {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      audioCtx = new Ctx();
+    }
+    if (audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+
+  function resetAudioPlayback() { nextPlayTime = 0; activeSources = []; }
+  function stopAudioPlayback() {
+    if (currentChatAbort) { currentChatAbort.abort(); currentChatAbort = null; }
+    for (const src of activeSources) { try { src.stop(); } catch {} }
+    activeSources = []; nextPlayTime = 0;
+  }
+  function playPcmChunk(b64) {
+    try {
+      const ctx = initAudioCtx();
+      const binary = atob(b64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      const int16 = new Int16Array(bytes.buffer);
+      const float32 = new Float32Array(int16.length);
+      for (let i = 0; i < int16.length; i++) float32[i] = int16[i] / 32768;
+      const buffer = ctx.createBuffer(1, float32.length, 22050);
+      buffer.copyToChannel(float32, 0);
+      const src = ctx.createBufferSource();
+      src.buffer = buffer;
+      src.connect(ctx.destination);
+      const now = ctx.currentTime;
+      if (nextPlayTime < now) nextPlayTime = now + 0.02;
+      src.start(nextPlayTime);
+      nextPlayTime += buffer.duration;
+      activeSources.push(src);
+      src.onended = () => { const idx = activeSources.indexOf(src); if (idx !== -1) activeSources.splice(idx, 1); };
+      if (status) status.textContent = 'Speaking...';
+    } catch (e) { console.error('Audio playback error:', e); }
+  }
+
+  let audioCache = new Map();
+  function getAudioEl(text) {
+    return new Promise((resolve, reject) => {
+      const cached = audioCache.get(text);
+      if (cached) { resolve(cached); return; }
+      fetch('/api/tts', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) })
+        .then(async (res) => {
+          if (!res.ok) throw new Error('TTS failed');
+          const blob = await res.blob();
+          const url = URL.createObjectURL(blob);
+          const audioEl = new Audio(url);
+          audioCache.set(text, audioEl);
+          resolve(audioEl);
+        }).catch(reject);
+    });
+  }
+  function replayText(text, btn) {
+    const trimmed = text.trim(); if (!trimmed) return;
+    btn.classList.add('playing');
+    getAudioEl(trimmed).then((audioEl) => {
+      if (status) status.textContent = 'Speaking...';
+      audioEl.onended = () => { btn.classList.remove('playing'); if (status) status.textContent = 'Click to start recording'; };
+      return audioEl.play();
+    }).catch((e) => { console.error(e); btn.classList.remove('playing'); });
+  }
+
+  function formatTimer(ms) {
+    const totalSec = Math.floor(ms / 1000);
+    const m = String(Math.floor(totalSec / 60)).padStart(2, '0');
+    const s = String(totalSec % 60).padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  function updateRecordingTimer() {
+    if (!isRecording || isPaused) return;
+    const elapsed = pausedAccum + (Date.now() - recordingStart);
+    recordingDurationMs = elapsed;
+    if (timerEl) {
+      timerEl.textContent = formatTimer(elapsed);
+      timerEl.classList.remove('valid', 'warn', 'over');
+      if (elapsed < 60000) timerEl.classList.add('warn');
+      else if (elapsed <= 80000) timerEl.classList.add('valid');
+      else timerEl.classList.add('over');
+    }
+    if (status) {
+      const base = isPaused ? 'Pausado' : 'Grabando';
+      if (timerEl) status.innerHTML = `<span id="fluency-timer" class="fluency-timer ${timerEl.className}">${formatTimer(elapsed)}</span> ${base} (${Math.floor(elapsed/1000)}s / 60-80s)`;
+    }
+    if (elapsed > 80000) {
+      // Límite suave: solo aviso visual, no auto-stop, se permite enviar >80s
+      if (status && !isPaused) {
+        // Mantener timer en rojo pero no detener
+      }
+    }
+  }
+
+  async function startRecording() {
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioChunks = [];
+      mediaRecorder = new MediaRecorder(mediaStream, { mimeType: 'audio/webm' });
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) audioChunks.push(event.data);
+      };
+
+      mediaRecorder.onstop = async () => {
+        if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+        if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
+        if (isCancelled) {
+          isCancelled = false;
+          isPaused = false;
+          pausedAccum = 0;
+          recordingDurationMs = 0;
+          if (timerEl) { timerEl.textContent = '00:00'; timerEl.className = 'fluency-timer'; }
+          if (status) status.innerHTML = '<span id="fluency-timer" class="fluency-timer">00:00</span> Grabación cancelada';
+          updateUI();
+          return;
+        }
+        const duration = pausedAccum + (isPaused ? 0 : (Date.now() - recordingStart));
+        recordingDurationMs = duration;
+        if (duration < 60000) {
+          if (status) status.innerHTML = `<span class="fluency-timer warn">${formatTimer(duration)}</span> Muy corto: ${Math.floor(duration/1000)}s, necesitas 60-80s. Vuelve a grabar.`;
+          isPaused = false;
+          pausedAccum = 0;
+          updateUI();
+          return;
+        }
+        if (duration > 80000) {
+          if (status) status.innerHTML = `<span class="fluency-timer over">${formatTimer(duration)}</span> ${Math.floor(duration/1000)}s (límite 80s suave, se enviará igual)`;
+        }
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        if (audioBlob.size > 0) await processAudio(audioBlob, duration);
+        isPaused = false;
+        pausedAccum = 0;
+      };
+
+      mediaRecorder.start(1000);
+      isRecording = true;
+      isPaused = false;
+      pausedAccum = 0;
+      recordingStart = Date.now();
+      recordingDurationMs = 0;
+      if (status) status.innerHTML = '<span id="fluency-timer" class="fluency-timer warn">00:00</span> Grabando (0s / 60-80s)';
+      recordingTimer = setInterval(updateRecordingTimer, 200);
+      updateUI();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      if (status) status.textContent = `Microphone error: ${msg}`;
+      console.error('Error accessing microphone:', error);
+    }
+  }
+
+  function stopRecording() {
+    if (mediaRecorder && isRecording) {
+      if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
+      mediaRecorder.stop();
+      isRecording = false;
+      updateUI();
+    }
+  }
+
+  function pauseRecording() {
+    if (mediaRecorder && isRecording && !isPaused && mediaRecorder.state === 'recording') {
+      mediaRecorder.pause();
+      isPaused = true;
+      pausedAccum += Date.now() - recordingStart;
+      if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
+      if (status) status.innerHTML = `<span id="fluency-timer" class="fluency-timer">${formatTimer(pausedAccum)}</span> Pausado (${Math.floor(pausedAccum/1000)}s)`;
+      updateUI();
+    }
+  }
+
+  function resumeRecording() {
+    if (mediaRecorder && isRecording && isPaused && mediaRecorder.state === 'paused') {
+      mediaRecorder.resume();
+      isPaused = false;
+      recordingStart = Date.now();
+      recordingTimer = setInterval(updateRecordingTimer, 200);
+      updateUI();
+    }
+  }
+
+  function cancelRecording() {
+    if (mediaRecorder && isRecording) {
+      isCancelled = true;
+      if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
+      mediaRecorder.stop();
+      isRecording = false;
+      isPaused = false;
+      updateUI();
+    }
+  }
+
+  function updateUI() {
+    if (isRecording) {
+      micIcon?.classList.add('hidden');
+      stopIcon?.classList.remove('hidden');
+      recordBtn.classList.add('recording');
+      cancelBtn?.classList.remove('hidden');
+      pauseBtn?.classList.remove('hidden');
+      if (isPaused) {
+        pauseBtn.textContent = 'Reanudar';
+        pauseBtn.classList.add('paused');
+        recordBtn.classList.add('paused');
+      } else {
+        pauseBtn.textContent = 'Pausar';
+        pauseBtn.classList.remove('paused');
+        recordBtn.classList.remove('paused');
+      }
+    } else {
+      micIcon?.classList.remove('hidden');
+      stopIcon?.classList.add('hidden');
+      recordBtn.classList.remove('recording', 'paused');
+      cancelBtn?.classList.add('hidden');
+      pauseBtn?.classList.add('hidden');
+      pauseBtn.classList.remove('paused');
+    }
+  }
+
+  function escapeHtml(text) {
+    return String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#039;');
+  }
+
+  function normalizeWord(word) {
+    return String(word).toLowerCase().replace(/[^a-z']/g, '');
+  }
+
+  function highlightTranscription(text, uncertainWords) {
+    const uncertain = new Set((uncertainWords || []).map(normalizeWord));
+    return String(text).split(/(\s+)/).map((part) => {
+      if (!/\S/.test(part)) return escapeHtml(part);
+      const clean = normalizeWord(part);
+      if (clean && uncertain.has(clean)) {
+        return `<span class="doubt" data-word="${escapeHtml(clean)}">${escapeHtml(part)}</span>`;
+      }
+      return escapeHtml(part);
+    }).join('');
+  }
+
+  const transcriptModal = document.getElementById('fluency-transcript-modal');
+  const transcriptEdit = document.getElementById('fluency-transcript-edit');
+  const transcriptConfirmBtn = document.getElementById('fluency-transcript-confirm');
+  const transcriptCancelBtn = document.getElementById('fluency-transcript-cancel');
+  const suggestPop = document.getElementById('fluency-suggest-pop');
+  const suggestInsertBtn = document.getElementById('fluency-suggest-insert');
+
+  let currentDoubtSpans = [];
+  let suggestActive = false;
+  let suggestedWord = '';
+  let suggestionReqId = 0;
+  let suppressInput = false;
+
+  function getCaretOffset() {
+    const sel = window.getSelection();
+    if (!sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    if (!transcriptEdit.contains(range.startContainer)) return null;
+    const pre = range.cloneRange();
+    pre.selectNodeContents(transcriptEdit);
+    pre.setEnd(range.startContainer, range.startOffset);
+    return pre.toString().length;
+  }
+
+  function setCaretToOffset(offset) {
+    const sel = window.getSelection();
+    if (!sel) return;
+    const node = transcriptEdit;
+    const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT, null);
+    let current = 0;
+    while (walker.nextNode()) {
+      const textNode = walker.currentNode;
+      const len = textNode.textContent.length;
+      if (current + len >= offset) {
+        const range = document.createRange();
+        range.setStart(textNode, Math.min(offset - current, len));
+        range.collapse(true);
+        sel.removeAllRanges();
+        sel.addRange(range);
+        return;
+      }
+      current += len;
+    }
+    const range = document.createRange();
+    range.selectNodeContents(node);
+    range.collapse(false);
+    sel.removeAllRanges();
+    sel.addRange(range);
+  }
+
+  function placeSuggestPop() {
+    if (!suggestPop) return;
+    const box = transcriptModal?.querySelector('.transcript-box');
+    if (!box) return;
+    const sel = window.getSelection();
+    const rect = sel && sel.rangeCount ? sel.getRangeAt(0).getBoundingClientRect() : null;
+    const boxRect = box.getBoundingClientRect();
+    const popRect = suggestPop.getBoundingClientRect();
+    const actionsRow = box.querySelector('.transcript-actions');
+    const actionsTop = actionsRow ? actionsRow.getBoundingClientRect().top : boxRect.bottom;
+    let left = (rect ? rect.left : boxRect.left) - boxRect.left;
+    let top = (rect ? rect.bottom : boxRect.top) - boxRect.top + 8;
+    const maxLeft = boxRect.width - 180;
+    if (left < 8) left = 8;
+    if (left > maxLeft) left = maxLeft;
+    if (top + popRect.height + 8 > actionsTop - boxRect.top) {
+      top = Math.max(8, (rect ? rect.top : boxRect.top) - boxRect.top - popRect.height - 8);
+    }
+    suggestPop.style.left = `${left}px`;
+    suggestPop.style.top = `${top}px`;
+  }
+
+  function hideSuggestPop() {
+    suggestActive = false;
+    suggestedWord = '';
+    if (suggestPop) {
+      suggestPop.classList.add('hidden');
+      const btn = document.getElementById('fluency-suggest-insert');
+      if (btn) btn.textContent = '…';
+    }
+  }
+
+  function insertSuggestedWord() {
+    if (!suggestActive || !suggestedWord) return;
+    suppressInput = true;
+    try { document.execCommand('insertText', false, suggestedWord); } catch (e) { console.error(e); }
+    suppressInput = false;
+    hideSuggestPop();
+  }
+
+  function onTranscriptInput() {
+    if (suppressInput) return;
+    if (suggestActive) { hideSuggestPop(); return; }
+    const removed = currentDoubtSpans.find((s) => !s.isConnected || !s.textContent.trim());
+    if (!removed) return;
+    currentDoubtSpans = currentDoubtSpans.filter((s) => s !== removed);
+    const offset = getCaretOffset();
+    if (offset === null) return;
+    if (removed.isConnected) removed.remove();
+    setCaretToOffset(offset);
+    const text = transcriptEdit?.textContent ?? '';
+    const before = text[offset - 1];
+    const after = text[offset];
+    const isGap = (before === undefined || /\s/.test(before)) && (after === undefined || /\s/.test(after));
+    if (!isGap) return;
+    const withBlank = text.slice(0, offset) + '___' + text.slice(offset);
+    suggestActive = true;
+    suggestedWord = '';
+    suggestionReqId++;
+    const reqId = suggestionReqId;
+    if (suggestPop) {
+      suggestPop.classList.remove('hidden');
+      const btn = document.getElementById('fluency-suggest-insert');
+      if (btn) btn.textContent = '…';
+    }
+    placeSuggestPop();
+    fetch('/api/suggest-word', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sentence: withBlank }) })
+      .then((res) => res.json()).then((data) => {
+        if (reqId !== suggestionReqId || !suggestActive) return;
+        const word = (data && typeof data.word === 'string' ? data.word : '').trim();
+        if (!word) { hideSuggestPop(); return; }
+        suggestedWord = word;
+        const btn = document.getElementById('fluency-suggest-insert');
+        if (btn) btn.textContent = word;
+        placeSuggestPop();
+      }).catch((error) => { console.error(error); if (reqId === suggestionReqId) hideSuggestPop(); });
+  }
+
+  function placeCaretAtPoint(x, y) {
+    const sel = window.getSelection();
+    if (!sel) return;
+    sel.removeAllRanges();
+    let range = null;
+    if (document.caretRangeFromPoint) range = document.caretRangeFromPoint(x, y);
+    else if (document.caretPositionFromPoint) {
+      const pos = document.caretPositionFromPoint(x, y);
+      if (pos) { range = document.createRange(); range.setStart(pos.offsetNode, pos.offset); range.collapse(true); }
+    }
+    if (range) sel.addRange(range);
+  }
+
+  if (transcriptEdit) transcriptEdit.addEventListener('input', onTranscriptInput);
+  if (transcriptEdit) {
+    transcriptEdit.addEventListener('click', (e) => {
+      const span = e.target.closest('.doubt');
+      if (!span || !transcriptEdit.contains(span)) return;
+      e.preventDefault();
+      const range = document.createRange(); range.selectNodeContents(span);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    });
+    transcriptEdit.addEventListener('dblclick', (e) => {
+      const span = e.target.closest('.doubt');
+      if (!span || !transcriptEdit.contains(span)) return;
+      e.preventDefault(); placeCaretAtPoint(e.clientX, e.clientY);
+    });
+  }
+  if (suggestInsertBtn) {
+    suggestInsertBtn.addEventListener('mousedown', (e) => e.preventDefault());
+    suggestInsertBtn.addEventListener('click', (e) => { e.preventDefault(); insertSuggestedWord(); });
+  }
+
+  function askTranscription(transcription, uncertainWords, audioBlob) {
+    return new Promise((resolve) => {
+      if (!transcriptModal || !transcriptEdit) { resolve(transcription); return; }
+      transcriptEdit.innerHTML = highlightTranscription(transcription, uncertainWords);
+      currentDoubtSpans = Array.from(transcriptEdit.querySelectorAll('.doubt'));
+      hideSuggestPop();
+      transcriptModal.classList.remove('hidden');
+      function onConfirm() { cleanup(); resolve(transcriptEdit.textContent.trim()); }
+      function onCancel() { cleanup(); resolve(null); }
+      function onKeydown(event) {
+        if (suggestActive && event.key === 'Tab') { event.preventDefault(); insertSuggestedWord(); return; }
+        if (suggestActive && event.key === 'Escape') { event.preventDefault(); hideSuggestPop(); return; }
+        if (event.key === 'Enter') { event.preventDefault(); onConfirm(); }
+        else if (event.key === 'Escape') { event.preventDefault(); onCancel(); }
+      }
+      transcriptConfirmBtn?.addEventListener('click', onConfirm);
+      transcriptCancelBtn?.addEventListener('click', onCancel);
+      transcriptEdit.addEventListener('keydown', onKeydown);
+      const replayBtn = document.getElementById('fluency-transcript-replay');
+      let audioUrl = null; let audioEl = null; let onReplayClick=null, onReplayPlay=null, onReplayPause=null;
+      try {
+        if (replayBtn && audioBlob) {
+          audioUrl = URL.createObjectURL(audioBlob);
+          audioEl = new Audio(audioUrl);
+          replayBtn.classList.remove('hidden');
+          onReplayClick = () => { if (audioEl.paused) { audioEl.currentTime=0; audioEl.play().catch(e=>console.error(e)); } else audioEl.pause(); };
+          onReplayPlay = () => { replayBtn.innerHTML = '&#10074;&#10074; Pausar'; };
+          onReplayPause = () => { replayBtn.innerHTML = '&#9654; Escuchar audio'; };
+          audioEl.addEventListener('play', onReplayPlay);
+          audioEl.addEventListener('pause', onReplayPause);
+          audioEl.addEventListener('ended', onReplayPause);
+          replayBtn.addEventListener('click', onReplayClick);
+        } else if (replayBtn) replayBtn.classList.add('hidden');
+      } catch (error) { console.error(error); }
+      function cleanup() {
+        transcriptConfirmBtn?.removeEventListener('click', onConfirm);
+        transcriptCancelBtn?.removeEventListener('click', onCancel);
+        transcriptEdit.removeEventListener('keydown', onKeydown);
+        if (replayBtn && audioEl && onReplayClick) {
+          audioEl.pause(); audioEl.removeEventListener('play', onReplayPlay); audioEl.removeEventListener('pause', onReplayPause); audioEl.removeEventListener('ended', onReplayPause); replayBtn.removeEventListener('click', onReplayClick);
+        }
+        if (audioUrl) URL.revokeObjectURL(audioUrl);
+        hideSuggestPop(); currentDoubtSpans=[]; transcriptModal.classList.add('hidden'); transcriptEdit.blur();
+      }
+      transcriptEdit.focus();
+      const range = document.createRange(); range.selectNodeContents(transcriptEdit); range.collapse(false);
+      const sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+    });
+  }
+
+  let lastAudioBlob = null;
+
+  async function processAudio(audioBlob, durationMs) {
+    const startTime = Date.now();
+    let timerEl = null;
+    function updateTimer() {
+      const elapsed = Math.floor((Date.now() - startTime) / 1000);
+      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
+      const s = String(elapsed % 60).padStart(2, '0');
+      if (timerEl) timerEl.textContent = `${m}:${s}`;
+    }
+    const timerInterval = setInterval(updateTimer, 1000);
+    function setStatusLabel(label) {
+      if (!status) return;
+      status.innerHTML = '<span class="timer" id="fluency-process-timer">00:00</span> ' + label;
+      timerEl = document.getElementById('fluency-process-timer');
+      updateTimer();
+    }
+    function clearTimer() { clearInterval(timerInterval); }
+
+    setStatusLabel('Escuchando tu audio');
+    const formData = new FormData();
+    formData.append('audio', audioBlob, 'recording.webm');
+    lastAudioBlob = audioBlob;
+
+    try {
+      const response = await fetch('/api/process-audio', { method: 'POST', body: formData });
+      const data = await response.json();
+      if (data.error) { if (status) status.textContent = data.error; clearTimer(); return; }
+      if (!data.transcription) { if (status) status.textContent = 'No transcription. Try again.'; clearTimer(); return; }
+
+      setStatusLabel('Revisa tu transcripción');
+      const finalText = await askTranscription(data.transcription, data.uncertainWords, audioBlob);
+      if (finalText === null) { if (status) status.textContent = 'Mensaje descartado'; clearTimer(); return; }
+
+      const topic = getCurrentTopic();
+      if (!topic) { if (status) status.textContent = 'No hay tema de debate. Genera uno nuevo.'; clearTimer(); return; }
+
+      addMessage('user', finalText);
+      fluencyHistory.push({ role: 'user', content: finalText });
+      setStatusLabel('Pensando respuesta...');
+      try {
+        resetAudioPlayback();
+        currentChatAbort = new AbortController();
+        const res = await fetch('/api/fluency-submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ topic, text: finalText, durationMs, history: fluencyHistory.slice(0, -1), startTime }),
+          signal: currentChatAbort.signal,
+        });
+        if (!res.ok) {
+          const errData = await res.json().catch(() => ({}));
+          if (status) status.textContent = errData.error || `Error ${res.status}`;
+          clearTimer(); return;
+        }
+        if (!res.body) {
+          const errData = await res.json().catch(() => ({}));
+          if (errData.error) { if (status) status.textContent = errData.error; clearTimer(); return; }
+        }
+        // Handle NDJSON stream (debateId + chunks + audio)
+        const msgEl = addMessage('assistant', '', true);
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let fullResponse = '';
+        let debateIdFromStream = null;
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() ?? '';
+          for (const line of lines) {
+            if (!line.trim()) continue;
+            try {
+              const parsed = JSON.parse(line);
+              if (parsed.debateId) {
+                debateIdFromStream = parsed.debateId;
+                window.dispatchEvent(new CustomEvent('fluency-submitted', { detail: { debateId: parsed.debateId } }));
+                const curEl = document.getElementById('fluency-current-debate');
+                if (curEl) curEl.dataset.debateId = String(parsed.debateId);
+              } else if (parsed.error) {
+                if (status) status.textContent = parsed.error;
+              } else if (parsed.chunk) {
+                fullResponse += parsed.chunk;
+                const p = msgEl.querySelector('p');
+                if (p) p.textContent = fullResponse;
+              } else if (parsed.audio) {
+                playPcmChunk(parsed.audio);
+              }
+            } catch {}
+          }
+        }
+        currentChatAbort = null;
+        if (fullResponse) {
+          fluencyHistory.push({ role: 'assistant', content: fullResponse });
+          if (status) status.innerHTML = `<span id="fluency-timer" class="fluency-timer valid">${formatTimer(durationMs)}</span> Debate continuado - Correcciones en camino`;
+          // Also dispatch debateId if not yet
+          if (debateIdFromStream) {
+            window.dispatchEvent(new CustomEvent('fluency-submitted', { detail: { debateId: debateIdFromStream } }));
+          }
+        } else if (debateIdFromStream) {
+          if (status) status.innerHTML = `<span id="fluency-timer" class="fluency-timer valid">${formatTimer(durationMs)}</span> Enviado (${Math.round(durationMs/1000)}s) - Correcciones en camino`;
+        }
+      } catch (e) {
+        if (e && (e as any).name === 'AbortError') { if (status) status.textContent = 'Click to start recording'; }
+        else { console.error('Fluency submit error:', e); if (status) status.textContent = 'Error enviando fluidez.'; }
+      }
+      clearTimer();
+    } catch (error) {
+      console.error('Error processing audio:', error);
+      if (status) status.textContent = 'Error processing audio. Try again.';
+      clearTimer();
+    }
+  }
+
+  recordBtn?.addEventListener('click', () => {
+    if (isRecording) stopRecording();
+    else startRecording();
+  });
+  pauseBtn?.addEventListener('click', () => {
+    if (!isRecording) return;
+    if (isPaused) resumeRecording();
+    else pauseRecording();
+  });
+  cancelBtn?.addEventListener('click', cancelRecording);
+</script>
+
+<style>
+  .recorder-container { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
+  .record-button { width: 72px; height: 72px; border-radius: 50%; border: none; background: var(--primary); color: white; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: all 0.2s ease; box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4); }
+  .record-button:hover { background: var(--primary-hover); transform: scale(1.05); }
+  .record-button.recording { background: var(--recording); animation: pulse 1.5s infinite; box-shadow: 0 4px 20px rgba(220, 38, 38, 0.4); }
+  .record-button.paused { background: #f59e0b; animation: none; box-shadow: 0 4px 20px rgba(245, 158, 11, 0.4); }
+  .mic-icon, .stop-icon { width: 32px; height: 32px; }
+  .hidden { display: none; }
+  .status { color: var(--text-muted); font-size: 0.875rem; text-align: center; }
+  .fluency-timer { font-variant-numeric: tabular-nums; background: rgba(0,0,0,0.08); padding: 1px 6px; border-radius: 4px; margin-right: 6px; font-size: 0.85em; font-family: monospace; }
+  .fluency-timer.valid { background: rgba(74,222,128,0.2); color: #4ade80; }
+  .fluency-timer.warn { background: rgba(245,158,11,0.2); color: #f59e0b; }
+  .fluency-timer.over { background: rgba(248,113,113,0.2); color: #f87171; }
+  .recorder-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+  .cancel-button, .pause-button { padding: 0.25rem 0.75rem; border: 1px solid var(--text-muted); border-radius: 4px; background: transparent; color: var(--text-muted); cursor: pointer; font-size: 0.8rem; transition: all 0.2s ease; }
+  .cancel-button:hover { border-color: var(--recording); color: var(--recording); }
+  .pause-button:hover { border-color: #f59e0b; color: #f59e0b; }
+  .pause-button.paused { border-color: #4ade80; color: #4ade80; background: rgba(74,222,128,0.08); }
+  .transcript-modal { position: fixed; inset: 0; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 1rem; backdrop-filter: blur(2px); }
+  .transcript-modal.hidden { display: none; }
+  .transcript-box { position: relative; background: var(--surface); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 1.75rem; width: min(920px, 100%); box-shadow: 0 12px 40px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 0.75rem; }
+  .transcript-title { margin: 0; font-size: 1.1rem; color: var(--text); }
+  .transcript-hint { margin: 0; font-size: 0.9rem; color: var(--text-muted); }
+  .transcript-edit { min-height: 4rem; padding: 0.85rem; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; font-size: 18pt; line-height: 1.6; background: var(--background); color: var(--text); overflow-y: auto; max-height: 320px; cursor: text; }
+  .transcript-edit:focus { outline: 2px solid var(--primary, #3b82f6); outline-offset: -1px; border-color: transparent; }
+  :global(.transcript-edit .doubt) { display: inline-block; background: rgba(245,158,11,0.16); border: 1px solid rgba(245,158,11,0.55); border-bottom: 2px solid #f59e0b; border-radius: 7px; padding: 1px 4px; margin: 0 2px; font-size: 17.5pt; line-height: 1.35; color: var(--text); cursor: help; box-shadow: 0 2px 6px rgba(0,0,0,0.25); white-space: nowrap; vertical-align: baseline; }
+  .suggest-pop { position: absolute; display: flex; align-items: center; gap: 0.5rem; background: var(--surface); border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; padding: 0.3rem 0.6rem; box-shadow: 0 8px 24px rgba(0,0,0,0.45); z-index: 20; }
+  .suggest-pop.hidden { display: none; }
+  .suggest-label { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+  .suggest-insert { padding: 0.25rem 0.75rem; border: none; border-radius: 6px; background: linear-gradient(135deg, var(--primary), #8b5cf6); color: #fff; cursor: pointer; font-size: 0.85rem; transition: all 0.2s ease; }
+  .suggest-insert:hover { filter: brightness(1.1); transform: translateY(-1px); }
+  .transcript-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 0.5rem; }
+  .transcript-btn.replay { margin-right: auto; display: inline-flex; align-items: center; gap: 0.4rem; }
+  .transcript-btn { padding: 0.5rem 1.25rem; border: none; border-radius: 6px; background: linear-gradient(135deg, var(--primary), #8b5cf6); color: #fff; cursor: pointer; font-size: 0.9rem; transition: all 0.2s ease; }
+  .transcript-btn:hover { transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59,130,246,0.4); }
+  .transcript-btn.ghost { background: transparent; border: 1px solid rgba(255,255,255,0.15); color: var(--text); }
+  .transcript-btn.ghost:hover { border-color: var(--recording); color: var(--recording); background: rgba(220,38,38,0.08); box-shadow: none; transform: none; }
+  @keyframes pulse { 0%, 100% { transform: scale(1); } 50% { transform: scale(1.1); } }
+</style>

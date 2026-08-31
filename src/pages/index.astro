@@ -7,8 +7,14 @@ import AudioRecorder from '../components/AudioRecorder.astro';
 <Layout title="FreeSpeak Unlimited">
   <main class="app">
     <header class="header">
-      <h1>FreeSpeak Unlimited</h1>
-      <p class="subtitle">Practice speaking English without limits</p>
+      <div class="header-main">
+        <h1>FreeSpeak Unlimited</h1>
+        <p class="subtitle">Practice speaking English without limits</p>
+      </div>
+      <nav class="nav-links nav-toggle">
+        <a href="/" class="nav-link active">Chat mode</a>
+        <a href="/fluency" class="nav-link">Debate mode</a>
+      </nav>
     </header>
 
     <div class="main-content">
@@ -596,8 +602,16 @@ import AudioRecorder from '../components/AudioRecorder.astro';
   }
 
   .header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     text-align: center;
     padding: 0.5rem 0;
+  }
+
+  .header-main {
+    text-align: center;
   }
 
   .header h1 {
@@ -613,6 +627,41 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     color: var(--text-muted);
     font-size: 0.9rem;
     margin-top: 0.25rem;
+  }
+
+  .nav-links.nav-toggle {
+    position: absolute;
+    top: 0.75rem;
+    right: 1rem;
+    display: inline-flex;
+    border: 1px solid rgba(255,255,255,0.15);
+    border-radius: 8px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.05);
+  }
+
+  .nav-links.nav-toggle .nav-link {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.8rem;
+    text-decoration: none;
+    color: var(--text-muted);
+    transition: all 0.15s;
+    border-right: 1px solid rgba(255,255,255,0.1);
+    background: transparent;
+  }
+
+  .nav-links.nav-toggle .nav-link:last-child {
+    border-right: none;
+  }
+
+  .nav-links.nav-toggle .nav-link.active {
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: white;
+  }
+
+  .nav-links.nav-toggle .nav-link:hover:not(.active) {
+    background: rgba(255,255,255,0.08);
+    color: var(--text);
   }
 
   .main-content {
