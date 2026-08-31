@@ -1,0 +1,448 @@
+---
+import Layout from '../layouts/Layout.astro';
+import ChatDisplay from '../components/ChatDisplay.astro';
+import FluencyRecorder from '../components/FluencyRecorder.astro';
+---
+
+<Layout title="Fluency Practice">
+  <main class="app">
+    <header class="header">
+      <button id="settings-btn" class="gear-btn" aria-label="Ajustes">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+      <div class="header-main">
+        <h1>Fluency Practice</h1>
+        <p class="subtitle">Debate un tema y habla 1:00-1:20 con pausas ilimitadas</p>
+      </div>
+      <nav class="nav-links nav-toggle">
+        <a href="/" class="nav-link">Chat Libre</a>
+        <a href="/fluency" class="nav-link active">Fluency 1:00-1:20</a>
+      </nav>
+    </header>
+
+    <div class="main-content">
+      <div class="chat-area">
+        <section class="topic-card" id="topic-card">
+          <div class="topic-header">
+            <h3>Free debate</h3>
+            <button id="new-topic-btn" class="topic-btn">New debate</button>
+          </div>
+          <p id="fluency-topic-text" class="topic-text">Press "New debate" to start aleatory debates</p>
+          <div id="fluency-current-debate" data-debate-id="" style="display:none"></div>
+        </section>
+
+        <section class="chat-container">
+          <ChatDisplay id="fluency-chat" />
+        </section>
+
+        <section class="controls">
+          <FluencyRecorder />
+        </section>
+      </div>
+
+      <aside class="trace-panel">
+        <h3>Correcciones Debate</h3>
+        <span class="trace-hint">Solo del debate actual</span>
+        <button id="clear-fluency" class="clear-btn">Limpiar debate</button>
+        <div id="fluency-trace-results" class="trace-results">
+          <p class="trace-empty">Habla 1:00-1:20 para recibir correcciones</p>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <div id="warmup-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-spinner"></div>
+      <p>Enviando el system prompt de conversación y de correcciones al cache...</p>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal-box settings-box" style="background:var(--surface);border:1px solid rgba(255,255,255,0.08);color:var(--text);max-width:380px;width:90%;padding:1.5rem;border-radius:12px">
+      <h3 style="margin:0 0 0.25rem;font-size:1rem">Ajustes</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 1rem">Acciones de mantenimiento</p>
+      <button id="clear-db-btn" class="clear-btn" style="width:100%">Limpiar base de datos</button>
+      <p style="font-size:0.7rem;color:var(--text-muted);margin:0.5rem 0 0;text-align:center">Borra corrections, debates, mensajes, expresiones y logs. Mantiene patterns.</p>
+      <button id="settings-close" class="clear-btn" style="width:100%;margin-top:0.75rem;border-color:rgba(255,255,255,0.15);color:var(--text)">Cerrar</button>
+    </div>
+  </div>
+
+  <div id="ctx-menu" class="ctx-menu" style="display:none">
+    <button id="ctx-add-expression" class="ctx-item">Guardar en Nuevas Expresiones</button>
+    <button id="ctx-translate" class="ctx-item">Traducir al español</button>
+  </div>
+
+  <div id="translation-popup" class="translation-popup" style="display:none">
+    <button id="translation-close" class="translation-close" title="Cerrar">×</button>
+    <div class="translation-label">Traducción</div>
+    <div id="translation-content" class="translation-content"></div>
+  </div>
+</Layout>
+
+<script>
+  // Warmup
+  (async () => {
+    try { await fetch('/api/warmup', { method: 'POST' }); } finally {
+      const modal = document.getElementById('warmup-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+  })();
+
+  // Settings modal
+  (() => {
+    const gear = document.getElementById('settings-btn');
+    const sModal = document.getElementById('settings-modal');
+    const sClose = document.getElementById('settings-close');
+    const clearBtn = document.getElementById('clear-db-btn') as HTMLButtonElement | null;
+    gear?.addEventListener('click', () => sModal?.classList.remove('hidden'));
+    sClose?.addEventListener('click', () => sModal?.classList.add('hidden'));
+    sModal?.addEventListener('click', (e) => { if (e.target === sModal) sModal.classList.add('hidden'); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') sModal?.classList.add('hidden'); });
+    clearBtn?.addEventListener('click', async () => {
+      if (!confirm('¿Limpiar base de datos? Se borrarán corrections, debates, mensajes, expresiones y logs. Esta acción no se puede deshacer.')) return;
+      clearBtn.disabled = true;
+      clearBtn.textContent = 'Limpiando...';
+      try {
+        const res = await fetch('/api/clear-all', { method: 'POST' });
+        const data = await res.json();
+        if (data.error) alert(data.error);
+        else location.reload();
+      } catch (e) {
+        alert('Error al limpiar');
+      } finally {
+        clearBtn.disabled = false;
+        clearBtn.textContent = 'Limpiar base de datos';
+        sModal?.classList.add('hidden');
+      }
+    });
+  })();
+
+  // Debate topic handling
+  const topicTextEl = document.getElementById('fluency-topic-text');
+  const newTopicBtn = document.getElementById('new-topic-btn');
+  const currentDebateEl = document.getElementById('fluency-current-debate');
+
+  async function loadNewTopic() {
+    if (!topicTextEl || !newTopicBtn) return;
+    newTopicBtn.disabled = true;
+    newTopicBtn.textContent = 'Generando...';
+    topicTextEl.textContent = 'Generando tema...';
+    try {
+      const res = await fetch('/api/fluency-topic', { method: 'POST' });
+      const data = await res.json();
+      if (data.topic) {
+        topicTextEl.textContent = data.topic;
+        // Limpiar chat por completo
+        const chat = document.getElementById('fluency-chat');
+        if (chat) chat.innerHTML = '';
+        // Notificar a FluencyRecorder para limpiar historial
+        window.dispatchEvent(new CustomEvent('fluency-new-topic'));
+        // Reset trace for new debate (topic no persiste, solo memoria)
+        const results = document.getElementById('fluency-trace-results');
+        if (results) results.innerHTML = '<p class="trace-empty">Nuevo debate: habla 1:00-1:20</p>';
+        lastDebateCorrectionId = 0;
+        isFirstDebateLoad = true;
+        if (currentDebateEl) currentDebateEl.dataset.debateId = '';
+        currentDebateId = null;
+      } else {
+        topicTextEl.textContent = 'No se pudo generar tema. Intenta de nuevo.';
+      }
+    } catch (e) {
+      topicTextEl.textContent = 'Error generando tema.';
+    }
+    newTopicBtn.disabled = false;
+    newTopicBtn.textContent = 'Nuevo tema';
+  }
+
+  newTopicBtn?.addEventListener('click', loadNewTopic);
+
+  // Fluency corrections polling - solo debate actual
+  let fluencyPollingId: ReturnType<typeof setInterval> | null = null;
+  let lastDebateCorrectionId = 0;
+  let isFirstDebateLoad = true;
+  let currentDebateId: number | null = null;
+
+  // Listen for fluency submission to set current debateId
+  window.addEventListener('fluency-submitted', (event: any) => {
+    const debateId = event.detail?.debateId;
+    if (debateId) {
+      currentDebateId = debateId;
+      if (currentDebateEl) currentDebateEl.dataset.debateId = String(debateId);
+      lastDebateCorrectionId = 0;
+      isFirstDebateLoad = true;
+      const results = document.getElementById('fluency-trace-results');
+      if (results) results.innerHTML = '<p class="trace-loading">Analizando tu intervención...</p>';
+    }
+  });
+
+  function updateFluencyStatus(msg: string) {
+    const results = document.getElementById('fluency-trace-results');
+    if (!results) return;
+    let statusEl = results.querySelector('.trace-status') as HTMLElement | null;
+    if (!statusEl) {
+      statusEl = document.createElement('p');
+      statusEl.className = 'trace-status trace-loading';
+    }
+    statusEl.textContent = msg;
+    if (results.firstChild !== statusEl) results.prepend(statusEl);
+  }
+
+  function removeFluencyStatus() {
+    const results = document.getElementById('fluency-trace-results');
+    if (!results) return;
+    const statusEl = results.querySelector('.trace-status');
+    if (statusEl) statusEl.remove();
+  }
+
+  function renderFluencyCard(corr: any): string {
+    const hasTime = corr.processing_ms != null;
+    const timeLabel = hasTime ? Math.round(corr.processing_ms / 1000) + 's' : '-';
+    return `
+        <div class="corr-card" data-id="${corr.id}">
+          <div class="corr-header"><span class="corr-time">${timeLabel}</span><span class="corr-tag">${corr.label || corr.code}</span></div>
+          <div class="corr-row"><span class="corr-bad">${corr.original}</span></div>
+          <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${corr.corrected}</span></div>
+        </div>`;
+  }
+
+  function renderAllFluencyCorrections(corrections: any[]) {
+    const results = document.getElementById('fluency-trace-results');
+    if (!results) return;
+    if (!corrections || corrections.length === 0) {
+      results.innerHTML = '<p class="trace-empty">Habla 1:00-1:20 para recibir correcciones</p>';
+      return;
+    }
+    let html = '<div class="trace-cards">';
+    for (const corr of corrections) html += renderFluencyCard(corr);
+    html += '</div>';
+    results.innerHTML = html;
+    let maxId = 0;
+    for (const corr of corrections) if (corr.id > maxId) maxId = corr.id;
+    if (maxId > lastDebateCorrectionId) lastDebateCorrectionId = maxId;
+  }
+
+  function appendNewFluencyCorrections(corrections: any[]) {
+    if (!corrections || corrections.length === 0) return;
+    const results = document.getElementById('fluency-trace-results');
+    if (!results) return;
+    let container = results.querySelector('.trace-cards') as HTMLElement | null;
+    if (!container) {
+      const empty = results.querySelector('.trace-empty');
+      if (empty) empty.remove();
+      container = document.createElement('div');
+      container.className = 'trace-cards';
+      const statusEl = results.querySelector('.trace-status');
+      if (statusEl) statusEl.after(container);
+      else results.appendChild(container);
+    }
+    for (const corr of corrections) {
+      const card = document.createElement('div');
+      card.innerHTML = renderFluencyCard(corr).trim();
+      const cardEl = card.firstElementChild as HTMLElement;
+      if (cardEl && container) container.prepend(cardEl);
+      if (corr.id > lastDebateCorrectionId) lastDebateCorrectionId = corr.id;
+    }
+  }
+
+  function renderFluencyPanel(data: any) {
+    const results = document.getElementById('fluency-trace-results');
+    if (!results) return;
+    // Si no hay debate actual, no mostrar previas (solo debate actual)
+    if (!currentDebateId) {
+      if (isFirstDebateLoad) {
+        renderAllFluencyCorrections([]);
+        isFirstDebateLoad = false;
+        removeFluencyStatus();
+      }
+      return;
+    }
+    if (isFirstDebateLoad) {
+      const initial = (data.corrections ?? data.newCorrections ?? []) as any[];
+      // API ya filtra por debateId, pero filtrar de nuevo por seguridad
+      const filtered = initial.filter((c: any) => c.debate_id === currentDebateId);
+      renderAllFluencyCorrections(filtered);
+      isFirstDebateLoad = false;
+      if (data.analyzing && data.queueLength > 0) updateFluencyStatus(`Analizando... (${data.queueLength} en cola)`);
+      else if (data.analyzing) updateFluencyStatus('Analizando tu intervención');
+      else removeFluencyStatus();
+      return;
+    }
+    if (data.newCorrections?.length) {
+      const nuevos = (data.newCorrections as any[]).filter((c: any) => c.debate_id === currentDebateId);
+      if (nuevos.length) appendNewFluencyCorrections(nuevos);
+    } else if (data.corrections?.length) {
+      const nuevos = (data.corrections as any[]).filter((c: any) => c.debate_id === currentDebateId).filter((c: any) => c.id > lastDebateCorrectionId).sort((a: any, b: any) => a.id - b.id);
+      if (nuevos.length) appendNewFluencyCorrections(nuevos);
+    }
+    if (data.analyzing && data.queueLength > 0) updateFluencyStatus(`Analizando... (${data.queueLength} en cola)`);
+    else if (data.analyzing) updateFluencyStatus('Analizando tu intervención');
+    else removeFluencyStatus();
+  }
+
+  async function pollFluencyCorrections() {
+    try {
+      if (!currentDebateId) {
+        if (isFirstDebateLoad) {
+          renderAllFluencyCorrections([]);
+          isFirstDebateLoad = false;
+          removeFluencyStatus();
+        }
+        return;
+      }
+      const res = await fetch(`/api/fluency-corrections-status?since=${lastDebateCorrectionId}&debateId=${currentDebateId}`);
+      const data = await res.json();
+      renderFluencyPanel(data);
+    } catch (e) { console.error('[pollFluency]', e); }
+  }
+
+  function startFluencyPolling() {
+    if (fluencyPollingId) return;
+    pollFluencyCorrections();
+    fluencyPollingId = setInterval(pollFluencyCorrections, 3000);
+  }
+
+  startFluencyPolling();
+
+  document.getElementById('clear-fluency')?.addEventListener('click', async () => {
+    const btn = document.getElementById('clear-fluency') as HTMLButtonElement | null;
+    if (!btn) return;
+    btn.disabled = true;
+    btn.textContent = 'Limpiando...';
+    try {
+      // Solo limpia UI, no borra DB histórico (topic no persiste)
+      const results = document.getElementById('fluency-trace-results');
+      if (results) results.innerHTML = '<p class="trace-empty">Debate limpiado.</p>';
+      lastDebateCorrectionId = 0;
+      isFirstDebateLoad = true;
+      currentDebateId = null;
+      if (currentDebateEl) currentDebateEl.dataset.debateId = '';
+    } finally {
+      btn.disabled = false;
+      btn.textContent = 'Limpiar debate';
+    }
+  });
+
+  // Context menu global (copiado de index)
+  const contextMenu = document.getElementById('ctx-menu');
+  const translationPopup = document.getElementById('translation-popup');
+  const translationContent = document.getElementById('translation-content');
+  let contextMenuItem: any = null;
+
+  function positionPopup(element: HTMLElement, clientX: number, clientY: number) {
+    const rect = element.getBoundingClientRect();
+    const margin = 8;
+    let left = clientX;
+    let top = clientY + margin;
+    if (left + rect.width > window.innerWidth - margin) left = Math.max(margin, window.innerWidth - rect.width - margin);
+    if (top + rect.height > window.innerHeight - margin) top = Math.max(margin, clientY - rect.height - margin);
+    element.style.left = `${left}px`;
+    element.style.top = `${top}px`;
+  }
+
+  document.addEventListener('contextmenu', (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('#ctx-menu, #translation-popup, #warmup-modal')) return;
+    if (target.closest('#fluency-transcript-modal')) return;
+    const selection = window.getSelection()?.toString().trim() ?? '';
+    if (!selection) return;
+    event.preventDefault();
+    contextMenuItem = { expression: selection, text: selection, x: event.clientX, y: event.clientY };
+    if (contextMenu) {
+      contextMenu.style.display = 'block';
+      positionPopup(contextMenu, event.clientX, event.clientY);
+    }
+    if (translationPopup) { translationPopup.style.display = 'none'; if (translationContent) translationContent.textContent = ''; }
+  });
+
+  function hideContextMenu() { if (contextMenu) contextMenu.style.display = 'none'; }
+  function hideTranslationPopup() { if (translationPopup) { translationPopup.style.display = 'none'; if (translationContent) translationContent.textContent = ''; } }
+  document.addEventListener('click', (event) => {
+    hideContextMenu();
+    if (translationPopup && !translationPopup.contains(event.target as Node) && !(event.target as HTMLElement).closest('#ctx-translate')) hideTranslationPopup();
+  });
+  document.addEventListener('keydown', (event) => { if (event.key !== 'Escape') return; hideContextMenu(); hideTranslationPopup(); });
+  document.getElementById('ctx-add-expression')?.addEventListener('click', async () => {
+    if (contextMenu) contextMenu.style.display = 'none';
+    if (!contextMenuItem) return;
+    try {
+      const res = await fetch('/api/expressions/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contextMenuItem) });
+      const data = await res.json();
+      if (data.error) alert(`Error: ${data.error}`);
+    } catch (e) { console.error(e); }
+  });
+  document.getElementById('ctx-translate')?.addEventListener('click', async () => {
+    hideContextMenu();
+    if (!contextMenuItem || !translationPopup || !translationContent) return;
+    const { text, x, y } = contextMenuItem;
+    if (!text) return;
+    positionPopup(translationPopup, x, y);
+    translationPopup.style.display = 'block';
+    translationContent.textContent = 'Traduciendo…';
+    try {
+      const res = await fetch('/api/translate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text }) });
+      const data = await res.json();
+      if (data.error) translationContent.textContent = `Error: ${data.error}`;
+      else if (data.translated) translationContent.textContent = data.translated;
+      else translationContent.textContent = 'No se pudo traducir.';
+    } catch (e) { console.error(e); translationContent.textContent = 'Error de conexión.'; }
+  });
+  document.getElementById('translation-close')?.addEventListener('click', hideTranslationPopup);
+</script>
+
+<style is:global>
+  .app { display: flex; flex-direction: column; height: 100vh; max-width: 1420px; margin: 0 auto; padding: 1rem; }
+  .header { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0.5rem 0; }
+  .header-main { text-align: center; }
+  .header h1 { font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem; }
+  .nav-links.nav-toggle { position: absolute; top: 0.75rem; right: 1rem; display: inline-flex; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.05); }
+  .nav-links.nav-toggle .nav-link { padding: 0.4rem 0.8rem; font-size: 0.8rem; text-decoration: none; color: var(--text-muted); transition: all 0.15s; border-right: 1px solid rgba(255,255,255,0.1); background: transparent; border-radius: 0; }
+  .nav-links.nav-toggle .nav-link:last-child { border-right: none; }
+  .nav-links.nav-toggle .nav-link.active { background: linear-gradient(135deg, var(--primary), #8b5cf6); color: white; }
+  .nav-links.nav-toggle .nav-link:hover:not(.active) { background: rgba(255,255,255,0.08); color: var(--text); }
+  .gear-btn { position: absolute; top: 0.75rem; left: 1rem; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(255,255,255,0.05); color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
+  .gear-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); border-color: var(--primary); }
+  .main-content { display: flex; flex: 1; gap: 1rem; min-height: 0; }
+  .chat-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .topic-card { background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; border-left: 3px solid var(--primary); }
+  .topic-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+  .topic-header h3 { margin: 0; font-size: 1rem; color: var(--text); }
+  .topic-btn { padding: 0.4rem 0.8rem; border: none; border-radius: 6px; background: linear-gradient(135deg, var(--primary), #8b5cf6); color: white; font-size: 0.8rem; cursor: pointer; }
+  .topic-btn:disabled { opacity: 0.5; }
+  .topic-text { font-size: 0.95rem; color: var(--text); font-style: italic; line-height: 1.5; min-height: 1.5rem; }
+  .chat-container { flex: 1; overflow-y: auto; background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; }
+  .controls { display: flex; justify-content: center; padding: 0.5rem 0; }
+  .trace-panel { width: 340px; flex-shrink: 0; background: var(--surface); border-radius: var(--border-radius); padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; border-left: 1px solid rgba(255,255,255,0.06); }
+  .trace-panel h3 { font-size: 1rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+  .trace-panel h3::before { content: '📝'; font-size: 1.1rem; }
+  .trace-hint { font-size: 0.7rem; color: var(--text-muted); }
+  .clear-btn { padding: 0.6rem 1rem; border: 1px solid var(--recording, #dc2626); border-radius: 8px; background: transparent; color: var(--recording, #dc2626); font-size: 0.85rem; cursor: pointer; }
+  .clear-btn:hover:not(:disabled) { background: rgba(220,38,38,0.1); }
+  .trace-results { flex: 1; overflow-y: auto; font-size: 0.85rem; line-height: 1.5; }
+  .trace-empty, .trace-loading { color: var(--text-muted); text-align: center; padding: 1.5rem 0; font-size: 0.85rem; }
+  .trace-cards { display: flex; flex-direction: column; gap: 0.75rem; }
+  .corr-header { display: flex; align-items: center; gap: 0.35rem; }
+  .corr-time { align-self: flex-start; font-size: 0.6rem; font-weight: 700; font-family: monospace; font-variant-numeric: tabular-nums; color: var(--text-muted); background: rgba(255,255,255,0.08); padding: 0.15rem 0.35rem; border-radius: 4px; min-width: 2.2em; text-align: center; }
+  .corr-tag { align-self: flex-start; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--primary); background: rgba(59,130,246,0.1); padding: 0.15rem 0.4rem; border-radius: 4px; }
+  .corr-card { background: #0f172a; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  .corr-row { display: flex; align-items: flex-start; gap: 0.35rem; padding: 0.25rem 0.4rem; border-radius: 5px; }
+  .corr-row:first-of-type { background: rgba(248,113,113,0.08); border-left: 3px solid #f87171; }
+  .corr-row:last-of-type { background: rgba(74,222,128,0.08); border-left: 3px solid #4ade80; }
+  .corr-bad { color: #fca5a5; font-size: 0.8rem; text-decoration: line-through; text-decoration-color: #f87171; }
+  .corr-arrow { color: var(--text-muted); font-size: 0.8rem; }
+  .corr-good { color: #86efac; font-size: 0.85rem; font-weight: 500; }
+  /* warmup, ctx-menu, translation-popup reused */
+  .modal-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
+  .modal-overlay.hidden { display: none; }
+  .modal-box { background: #fff; border-radius: 12px; padding: 28px 36px; max-width: 420px; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,0.3); color: #333; }
+  .modal-spinner { width: 36px; height: 36px; margin: 0 auto 16px; border: 4px solid rgba(0,0,0,0.12); border-top-color: #6b46c1; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .ctx-menu { position: fixed; z-index: 9998; background: #0f172a; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 0.25rem; box-shadow: 0 8px 24px rgba(0,0,0,0.4); min-width: 200px; }
+  .ctx-item { display: block; width: 100%; padding: 0.5rem 0.75rem; border: none; background: transparent; color: var(--text); font-size: 0.82rem; text-align: left; border-radius: 6px; cursor: pointer; }
+  .ctx-item:hover { background: rgba(59,130,246,0.15); color: var(--primary); }
+  .translation-popup { position: fixed; z-index: 9998; background: var(--surface-light); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 0.6rem 0.75rem; box-shadow: 0 8px 24px rgba(0,0,0,0.45); max-width: 320px; min-width: 160px; color: var(--text); }
+  .translation-close { position: absolute; top: 4px; right: 6px; width: 22px; height: 22px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; }
+  .translation-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; color: var(--primary); margin-bottom: 0.3rem; }
+  .translation-content { font-size: 0.85rem; line-height: 1.45; white-space: pre-wrap; }
+</style>

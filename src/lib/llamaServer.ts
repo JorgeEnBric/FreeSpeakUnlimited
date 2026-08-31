@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from 'child_process';
 import { existsSync } from 'fs';
-import { CONVERSATION_SYSTEM_PROMPT, CORRECTIONS_SYSTEM_PROMPT, SUGGESTION_SYSTEM_PROMPT } from './prompts';
+import { CONVERSATION_SYSTEM_PROMPT, CORRECTIONS_SYSTEM_PROMPT, SUGGESTION_SYSTEM_PROMPT, FLUENCY_DEBATE_PROMPT } from './prompts';
 import { LLAMA_SERVER_EXE, LLAMA_SERVER_BIN_DIR, getGemmaModelPath } from './modelConfig';
 
 const HOST = '127.0.0.1';
@@ -205,6 +205,7 @@ export async function warmup(): Promise<void> {
         await primeCache(CONVERSATION_SYSTEM_PROMPT);
         await primeCache(CORRECTIONS_SYSTEM_PROMPT);
         await primeCache(SUGGESTION_SYSTEM_PROMPT);
+        await primeCache(FLUENCY_DEBATE_PROMPT);
       }
     } finally {
       warmupState = 'done';

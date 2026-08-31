@@ -85,6 +85,26 @@ export async function initDB(): Promise<void> {
     ('ARTICLES', 'Articles', 'Missing or incorrect articles'),
     ('OTHER', 'Other', 'Other types of errors')
   `);
+  // Tablas fluidez: Debate (mensajes largos) y CorreccionsDebate separadas
+  d.run(`CREATE TABLE IF NOT EXISTS debates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    topic TEXT NOT NULL,
+    text TEXT NOT NULL,
+    duration_ms INTEGER NOT NULL,
+    analyzed INTEGER DEFAULT 0,
+    created_at TEXT DEFAULT (datetime('now'))
+  )`);
+  d.run(`CREATE TABLE IF NOT EXISTS debate_corrections (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    debate_id INTEGER NOT NULL,
+    original TEXT NOT NULL,
+    corrected TEXT,
+    pattern_code TEXT NOT NULL,
+    processing_ms INTEGER,
+    created_at TEXT DEFAULT (datetime('now')),
+    FOREIGN KEY (debate_id) REFERENCES debates(id),
+    FOREIGN KEY (pattern_code) REFERENCES patterns(code)
+  )`);
   save();
 }
 
@@ -226,7 +246,114 @@ export async function getUnanalyzedCount(): Promise<number> {
 export async function clearAll(): Promise<void> {
   const d = await getDb();
   d.run('DELETE FROM corrections');
+  d.run('DELETE FROM debate_corrections');
+  d.run('DELETE FROM debates');
+  d.run('DELETE FROM messages');
+  d.run('DELETE FROM new_expressions');
   d.run('DELETE FROM logs');
+  save();
+}
+
+export async function insertDebate(topic: string, text: string, durationMs: number): Promise<number> {
+  const d = await getDb();
+  d.run('INSERT INTO debates (topic, text, duration_ms, analyzed) VALUES (?, ?, ?, 0)', [topic, text, durationMs]);
+  const id = (d.exec('SELECT last_insert_rowid()')[0].values[0][0]) as number;
+  save();
+  return id;
+}
+
+export async function getDebateById(id: number): Promise<{ id: number; topic: string; text: string; duration_ms: number } | null> {
+  const d = await getDb();
+  const rows = d.exec('SELECT id, topic, text, duration_ms FROM debates WHERE id = ?', [id]);
+  if (!rows.length || !rows[0].values.length) return null;
+  const r = rows[0].values[0] as any[];
+  return { id: r[0] as number, topic: r[1] as string, text: r[2] as string, duration_ms: r[3] as number };
+}
+
+export async function insertDebateCorrection(
+  debateId: number,
+  original: string,
+  corrected: string,
+  patternCode: string,
+  processingMs?: number | null
+): Promise<void> {
+  const d = await getDb();
+  d.run(
+    'INSERT INTO debate_corrections (debate_id, original, corrected, pattern_code, processing_ms) VALUES (?, ?, ?, ?, ?)',
+    [debateId, original, corrected, patternCode, processingMs ?? null]
+  );
+  save();
+}
+
+export async function markDebateAnalyzed(ids: number[]): Promise<void> {
+  if (!ids.length) return;
+  const d = await getDb();
+  const ph = ids.map(() => '?').join(',');
+  d.run(`UPDATE debates SET analyzed = 1 WHERE id IN (${ph})`, ids);
+  save();
+}
+
+export async function getNewDebateCorrectionsSince(lastId: number, debateId?: number | null): Promise<{
+  id: number; code: string; label: string; original: string; corrected: string; processing_ms: number | null; debate_id: number;
+}[]> {
+  const d = await getDb();
+  let sql = `
+    SELECT c.id, p.code, p.label, c.original, c.corrected, c.processing_ms, c.debate_id
+    FROM debate_corrections c
+    JOIN patterns p ON p.code = c.pattern_code
+    WHERE c.id > ?
+  `;
+  const params: any[] = [lastId];
+  if (debateId) {
+    sql += ` AND c.debate_id = ?`;
+    params.push(debateId);
+  }
+  sql += ` ORDER BY c.created_at ASC`;
+  const rows = d.exec(sql, params);
+  if (!rows.length) return [];
+  return rows[0].values.map((r: any) => ({
+    id: r[0] as number,
+    code: r[1] as string,
+    label: r[2] as string,
+    original: r[3] as string,
+    corrected: r[4] as string,
+    processing_ms: r[5] as number | null,
+    debate_id: r[6] as number,
+  }));
+}
+
+export async function getDebateCorrections(debateId?: number | null): Promise<{
+  id: number; code: string; label: string; original: string; corrected: string; processing_ms: number | null; debate_id: number;
+}[]> {
+  const d = await getDb();
+  let sql = `
+    SELECT c.id, p.code, p.label, c.original, c.corrected, c.processing_ms, c.debate_id
+    FROM debate_corrections c
+    JOIN patterns p ON p.code = c.pattern_code
+  `;
+  const params: any[] = [];
+  if (debateId) {
+    sql += ` WHERE c.debate_id = ?`;
+    params.push(debateId);
+  }
+  sql += ` ORDER BY c.id DESC`;
+  const rows = params.length ? d.exec(sql, params) : d.exec(sql);
+  if (!rows.length) return [];
+  return rows[0].values.map((r: any) => ({
+    id: r[0] as number,
+    code: r[1] as string,
+    label: r[2] as string,
+    original: r[3] as string,
+    corrected: r[4] as string,
+    processing_ms: r[5] as number | null,
+    debate_id: r[6] as number,
+  }));
+}
+
+export async function clearDebateCorrections(debateId?: number | null): Promise<void> {
+  const d = await getDb();
+  if (debateId) d.run('DELETE FROM debate_corrections WHERE debate_id = ?', [debateId]);
+  else d.run('DELETE FROM debate_corrections');
   save();
 }
 
