@@ -22,7 +22,7 @@
   <div id="fluency-transcript-modal" class="transcript-modal hidden">
     <div class="transcript-box">
       <h3 class="transcript-title">Your speech</h3>
-      <p class="transcript-hint">Review transcript. Correct if needed and press Send. Must last 1:00-1:20.</p>
+      <p class="transcript-hint">Review transcript. Correct if needed and press Send. Recording auto-stops at 2:00.</p>
       <div id="fluency-transcript-edit" class="transcript-edit" contenteditable="true" role="textbox" aria-multiline="false" spellcheck="false"></div>
       <div id="fluency-suggest-pop" class="suggest-pop hidden">
         <span class="suggest-label">Sugerencia:</span>
@@ -179,19 +179,16 @@
     if (timerEl) {
       timerEl.textContent = formatTimer(elapsed);
       timerEl.classList.remove('valid', 'warn', 'over');
-      if (elapsed < 60000) timerEl.classList.add('warn');
-      else if (elapsed <= 80000) timerEl.classList.add('valid');
+      if (elapsed < 120000) timerEl.classList.add('valid');
       else timerEl.classList.add('over');
     }
     if (status) {
       const base = isPaused ? 'Paused' : 'Recording';
-      if (timerEl) status.innerHTML = `<span id="fluency-timer" class="fluency-timer ${timerEl.className}">${formatTimer(elapsed)}</span> ${base} (${Math.floor(elapsed/1000)}s / 60-80s)`;
+      if (timerEl) status.innerHTML = `<span id="fluency-timer" class="fluency-timer ${timerEl.className}">${formatTimer(elapsed)}</span> ${base} (${Math.floor(elapsed/1000)}s / 120s)`;
     }
-    if (elapsed > 80000) {
-      // Límite suave: solo aviso visual, no auto-stop, se permite enviar >80s
-      if (status && !isPaused) {
-        // Mantener timer en rojo pero no detener
-      }
+    if (elapsed >= 120000) {
+      // Límite duro: detener grabación automáticamente y continuar al modal
+      stopRecording();
     }
   }
 
@@ -220,16 +217,6 @@
         }
         const duration = pausedAccum + (isPaused ? 0 : (Date.now() - recordingStart));
         recordingDurationMs = duration;
-        if (duration < 60000) {
-          if (status) status.innerHTML = `<span class="fluency-timer warn">${formatTimer(duration)}</span> Too short: ${Math.floor(duration/1000)}s, need 60-80s. Record again.`;
-          isPaused = false;
-          pausedAccum = 0;
-          updateUI();
-          return;
-        }
-        if (duration > 80000) {
-          if (status) status.innerHTML = `<span class="fluency-timer over">${formatTimer(duration)}</span> ${Math.floor(duration/1000)}s (soft 80s limit, will still send)`;
-        }
         const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
         if (audioBlob.size > 0) await processAudio(audioBlob, duration);
         isPaused = false;
@@ -242,7 +229,7 @@
       pausedAccum = 0;
       recordingStart = Date.now();
       recordingDurationMs = 0;
-      if (status) status.innerHTML = '<span id="fluency-timer" class="fluency-timer warn">00:00</span> Grabando (0s / 60-80s)';
+      if (status) status.innerHTML = '<span id="fluency-timer" class="fluency-timer valid">00:00</span> Recording (0s / 120s)';
       recordingTimer = setInterval(updateRecordingTimer, 200);
       updateUI();
     } catch (error) {

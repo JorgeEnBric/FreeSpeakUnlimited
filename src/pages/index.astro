@@ -153,14 +153,18 @@ import AudioRecorder from '../components/AudioRecorder.astro';
     if (statusEl) statusEl.remove();
   }
 
+  function escapeHtml(s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
   function renderCard(corr: any): string {
     const hasTime = corr.processing_ms != null;
     const timeLabel = hasTime ? Math.round(corr.processing_ms / 1000) + 's' : '-';
     return `
         <div class="corr-card" data-id="${corr.id}">
           <div class="corr-header"><span class="corr-time">${timeLabel}</span><span class="corr-tag">${corr.label || corr.code}</span></div>
-          <div class="corr-row"><span class="corr-bad">${corr.original}</span></div>
-          <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${corr.corrected}</span></div>
+          <div class="corr-row"><span class="corr-bad">${escapeHtml(corr.original)}</span></div>
+          <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${escapeHtml(corr.corrected)}</span></div>
         </div>`;
   }
 

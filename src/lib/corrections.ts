@@ -79,7 +79,7 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
     await ensureStarted();
     if (isRunning()) {
       console.log(`[Corrections] Calling LLM for message ${messageId}...`);
-      const result = await complete(userPrompt, systemPrompt, { n_predict: 60, timeoutMs: 180000 });
+      const result = await complete(userPrompt, systemPrompt, { n_predict: 120, timeoutMs: 180000 });
       if (result) raw = result;
       console.log(`[Corrections] LLM response length: ${raw.length}`);
     } else {
@@ -102,7 +102,7 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
         '-sys', systemPrompt,
         '-p', userPrompt,
         '-o', outFile,
-        '-n', '60',
+        '-n', '120',
         '--temp', '0.3',
         '--repeat-penalty', '1.0',
         '--single-turn',
@@ -140,6 +140,13 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
       cursor = nextIdx !== -1 ? nextIdx : body.length;
     }
 
+    // Fallback: el modelo a veces omite **Correction:** y solo emite el texto corregido seguido de **Pattern:**
+    if (blocks.length === 0 && body.indexOf('**Pattern:**') !== -1) {
+      const patIdx = body.indexOf('**Pattern:**');
+      let correctionText = body.substring(0, patIdx).replace(/\*\*/g, '').trim();
+      if (correctionText.length >= 5) blocks.push(correctionText);
+    }
+
     const patLabel = '**Pattern:**';
     const patCodeLabel = '**Pattern Code:**';
 
@@ -167,10 +174,11 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
       const pattern = patterns.length > 0 ? patterns[0] : 'OTHER';
       const original = subSentences[i] ?? message.text;
 
-      await insertLog('corrections', `msg ${messageId} pattern=${pattern} corr="${correction.substring(0,60)}" orig="${original.substring(0,40)}" processingMs=${processingMs}`);
-
       if (correction) {
+        await insertLog('corrections', `msg ${messageId} pattern=${pattern} corr="${correction.substring(0,60)}" orig="${original.substring(0,40)}" processingMs=${processingMs}`);
         await insertCorrection(messageId, original, correction, pattern, processingMs);
+      } else {
+        await insertLog('corrections', `WARN msg ${messageId}: empty correction for block ${i}, skipping`);
       }
     }
     if (blocks.length !== subSentences.length) {

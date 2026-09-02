@@ -32,21 +32,6 @@ export const POST: APIRoute = async ({ request }) => {
       });
     }
 
-    if (durationMs < 60000) {
-      return new Response(JSON.stringify({ error: `Audio debe durar al menos 60 segundos. Duración: ${Math.round(durationMs / 1000)}s` }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-    // Límite 80s es suave solo en micrófono, se permite enviar >80s
-
-    if (text.split(/\s+/).length < 20) {
-      return new Response(JSON.stringify({ error: 'Text is too short for 60 seconds of speech' }), {
-        status: 400,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
     checkModels();
 
     const { initDB, insertDebate } = await import('../../lib/database');

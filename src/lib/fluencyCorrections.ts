@@ -141,6 +141,13 @@ async function analyzeDebateMessage(debateId: number): Promise<void> {
       cursor = nextIdx !== -1 ? nextIdx : body.length;
     }
 
+    // Fallback: el modelo a veces omite **Correction:** y solo emite el texto corregido seguido de **Pattern:**
+    if (corrBlocks.length === 0 && body.indexOf('**Pattern:**') !== -1) {
+      const patIdx = body.indexOf('**Pattern:**');
+      let correctionText = body.substring(0, patIdx).replace(/\*\*/g, '').trim();
+      if (correctionText.length >= 5) corrBlocks.push(correctionText);
+    }
+
     const patLabel = '**Pattern:**';
     const patCodeLabel = '**Pattern Code:**';
 
