@@ -7,16 +7,16 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
 <Layout title="Fluency Practice">
   <main class="app">
     <header class="header">
-      <button id="settings-btn" class="gear-btn" aria-label="Ajustes">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" width="18" height="18"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      <button id="settings-btn" class="gear-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.72l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
       </button>
       <div class="header-main">
         <h1>Fluency Practice</h1>
-        <p class="subtitle">Debate un tema y habla 1:00-1:20 con pausas ilimitadas</p>
+        <p class="subtitle">Just turn on your microphone and speak openly</p>
       </div>
       <nav class="nav-links nav-toggle">
-        <a href="/" class="nav-link">Chat Libre</a>
-        <a href="/fluency" class="nav-link active">Fluency 1:00-1:20</a>
+        <a href="/" class="nav-link">Chat mode</a>
+        <a href="/fluency" class="nav-link active">Debate mode</a>
       </nav>
     </header>
 
@@ -41,11 +41,11 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       </div>
 
       <aside class="trace-panel">
-        <h3>Correcciones Debate</h3>
-        <span class="trace-hint">Solo del debate actual</span>
-        <button id="clear-fluency" class="clear-btn">Limpiar debate</button>
+        <h3>Automatic corrections</h3>
+        <span class="trace-hint">Corrections from the current conversation</span>
+        <button id="clear-fluency" class="clear-btn">Clean debate</button>
         <div id="fluency-trace-results" class="trace-results">
-          <p class="trace-empty">Habla 1:00-1:20 para recibir correcciones</p>
+          <p class="trace-empty">Speak to get automatic corrections</p>
         </div>
       </aside>
     </div>
@@ -54,7 +54,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
   <div id="warmup-modal" class="modal-overlay">
     <div class="modal-box">
       <div class="modal-spinner"></div>
-      <p>Enviando el system prompt de conversación y de correcciones al cache...</p>
+      <p>Sending conversation and corrections system prompt to cache...</p>
     </div>
   </div>
 
@@ -69,7 +69,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
   </div>
 
   <div id="ctx-menu" class="ctx-menu" style="display:none">
-    <button id="ctx-add-expression" class="ctx-item">Guardar en Nuevas Expresiones</button>
+    <button id="ctx-add-expression" class="ctx-item">Save to New Expressions</button>
     <button id="ctx-translate" class="ctx-item">Traducir al español</button>
   </div>
 
@@ -100,9 +100,9 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
     sModal?.addEventListener('click', (e) => { if (e.target === sModal) sModal.classList.add('hidden'); });
     document.addEventListener('keydown', (e) => { if (e.key === 'Escape') sModal?.classList.add('hidden'); });
     clearBtn?.addEventListener('click', async () => {
-      if (!confirm('¿Limpiar base de datos? Se borrarán corrections, debates, mensajes, expresiones y logs. Esta acción no se puede deshacer.')) return;
+      if (!confirm('Clear database? Corrections, debates, messages, expressions and logs will be deleted. This cannot be undone.')) return;
       clearBtn.disabled = true;
-      clearBtn.textContent = 'Limpiando...';
+      clearBtn.textContent = 'Clearing...';
       try {
         const res = await fetch('/api/clear-all', { method: 'POST' });
         const data = await res.json();
@@ -126,8 +126,8 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
   async function loadNewTopic() {
     if (!topicTextEl || !newTopicBtn) return;
     newTopicBtn.disabled = true;
-    newTopicBtn.textContent = 'Generando...';
-    topicTextEl.textContent = 'Generando tema...';
+    newTopicBtn.textContent = 'Generating...';
+    topicTextEl.textContent = 'Generating topic...';
     try {
       const res = await fetch('/api/fluency-topic', { method: 'POST' });
       const data = await res.json();
@@ -140,16 +140,16 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
         window.dispatchEvent(new CustomEvent('fluency-new-topic'));
         // Reset trace for new debate (topic no persiste, solo memoria)
         const results = document.getElementById('fluency-trace-results');
-        if (results) results.innerHTML = '<p class="trace-empty">Nuevo debate: habla 1:00-1:20</p>';
+        if (results) results.innerHTML = '<p class="trace-empty">Speak to get automatic corrections</p>';
         lastDebateCorrectionId = 0;
         isFirstDebateLoad = true;
         if (currentDebateEl) currentDebateEl.dataset.debateId = '';
         currentDebateId = null;
       } else {
-        topicTextEl.textContent = 'No se pudo generar tema. Intenta de nuevo.';
+        topicTextEl.textContent = 'Could not generate topic. Try again.';
       }
     } catch (e) {
-      topicTextEl.textContent = 'Error generando tema.';
+      topicTextEl.textContent = 'Error generating topic.';
     }
     newTopicBtn.disabled = false;
     newTopicBtn.textContent = 'Nuevo tema';
@@ -172,7 +172,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       lastDebateCorrectionId = 0;
       isFirstDebateLoad = true;
       const results = document.getElementById('fluency-trace-results');
-      if (results) results.innerHTML = '<p class="trace-loading">Analizando tu intervención...</p>';
+      if (results) results.innerHTML = '<p class="trace-loading">Analyzing your speech...</p>';
     }
   });
 
@@ -210,7 +210,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
     const results = document.getElementById('fluency-trace-results');
     if (!results) return;
     if (!corrections || corrections.length === 0) {
-      results.innerHTML = '<p class="trace-empty">Habla 1:00-1:20 para recibir correcciones</p>';
+      results.innerHTML = '<p class="trace-empty">Speak to get automatic corrections</p>';
       return;
     }
     let html = '<div class="trace-cards">';
@@ -264,7 +264,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       renderAllFluencyCorrections(filtered);
       isFirstDebateLoad = false;
       if (data.analyzing && data.queueLength > 0) updateFluencyStatus(`Analizando... (${data.queueLength} en cola)`);
-      else if (data.analyzing) updateFluencyStatus('Analizando tu intervención');
+      else if (data.analyzing) updateFluencyStatus('Analyzing your speech');
       else removeFluencyStatus();
       return;
     }
@@ -276,7 +276,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       if (nuevos.length) appendNewFluencyCorrections(nuevos);
     }
     if (data.analyzing && data.queueLength > 0) updateFluencyStatus(`Analizando... (${data.queueLength} en cola)`);
-    else if (data.analyzing) updateFluencyStatus('Analizando tu intervención');
+    else if (data.analyzing) updateFluencyStatus('Analyzing your speech');
     else removeFluencyStatus();
   }
 
@@ -308,18 +308,18 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
     const btn = document.getElementById('clear-fluency') as HTMLButtonElement | null;
     if (!btn) return;
     btn.disabled = true;
-    btn.textContent = 'Limpiando...';
+    btn.textContent = 'Clearing...';
     try {
       // Solo limpia UI, no borra DB histórico (topic no persiste)
       const results = document.getElementById('fluency-trace-results');
-      if (results) results.innerHTML = '<p class="trace-empty">Debate limpiado.</p>';
+      if (results) results.innerHTML = '<p class="trace-empty">Debate cleared.</p>';
       lastDebateCorrectionId = 0;
       isFirstDebateLoad = true;
       currentDebateId = null;
       if (currentDebateEl) currentDebateEl.dataset.debateId = '';
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Limpiar debate';
+      btn.textContent = 'Clean debate';
     }
   });
 

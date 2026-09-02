@@ -20,17 +20,17 @@
 
   <div id="transcript-modal" class="transcript-modal hidden">
     <div class="transcript-box">
-      <h3 class="transcript-title">Tu mensaje</h3>
-      <p class="transcript-hint">Las palabras resaltadas son las que el modelo no escuchó con seguridad. Bórralas para ver una sugerencia o corrígelas con el teclado, y presiona Enter para enviar.</p>
+      <h3 class="transcript-title">Your message</h3>
+      <p class="transcript-hint">Highlighted words are those the model didn't hear confidently. Delete them to see a suggestion or correct with keyboard, and press Enter to send.</p>
       <div id="transcript-edit" class="transcript-edit" contenteditable="true" role="textbox" aria-multiline="false" spellcheck="false"></div>
       <div id="suggest-pop" class="suggest-pop hidden">
         <span class="suggest-label">Sugerencia:</span>
         <button id="suggest-insert" class="suggest-insert" type="button">…</button>
       </div>
       <div class="transcript-actions">
-        <button id="transcript-replay" class="transcript-btn ghost replay" type="button" aria-label="Escuchar tu audio">&#9654; Escuchar audio</button>
-        <button id="transcript-cancel" class="transcript-btn ghost" type="button">Descartar</button>
-        <button id="transcript-confirm" class="transcript-btn" type="button">Enviar</button>
+        <button id="transcript-replay" class="transcript-btn ghost replay" type="button" aria-label="Escuchar tu audio">&#9654; Listen to audio</button>
+        <button id="transcript-cancel" class="transcript-btn ghost" type="button">Discard</button>
+        <button id="transcript-confirm" class="transcript-btn" type="button">Send</button>
       </div>
     </div>
   </div>
@@ -433,10 +433,10 @@
             }
           };
           onReplayPlay = () => {
-            replayBtn.innerHTML = '&#10074;&#10074; Pausar';
+            replayBtn.innerHTML = '&#10074;&#10074; Pause';
           };
           onReplayPause = () => {
-            replayBtn.innerHTML = '&#9654; Escuchar audio';
+            replayBtn.innerHTML = '&#9654; Listen to audio';
           };
           audioEl.addEventListener('play', onReplayPlay);
           audioEl.addEventListener('pause', onReplayPause);
@@ -498,7 +498,7 @@
     }
 
     // Phase 1: Whisper transcription
-    setStatusLabel('Escuchando tu audio');
+    setStatusLabel('Listening to your audio');
     const formData = new FormData();
     formData.append('audio', audioBlob, 'recording.webm');
 
@@ -522,17 +522,17 @@
       }
 
       // Confirm/edit transcription (doubtful words highlighted)
-      setStatusLabel('Revisa tu transcripción');
+      setStatusLabel('Review your transcript');
       const finalText = await askTranscription(data.transcription, data.uncertainWords, audioBlob);
       if (finalText === null) {
-        if (status) status.textContent = 'Mensaje descartado';
+        if (status) status.textContent = 'Message discarded';
         clearTimer();
         return;
       }
       addMessage('user', finalText);
 
       // Phase 2: Model response (streaming TTS)
-      setStatusLabel('Pensando una respuesta');
+      setStatusLabel('Thinking of a reply');
       try {
         resetAudioPlayback();
         currentChatAbort = new AbortController();
