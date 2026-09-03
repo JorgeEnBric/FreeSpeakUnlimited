@@ -18,7 +18,6 @@ export const CORRECTIONS_SYSTEM_PROMPT = 'You are a friendly English teacher hel
 export const FLUENCY_DEBATE_PROMPT = `You are a debate moderator for B1-C1 English learners. Propose ONE controversial debate topic as a single provocative question. Rules:
 - One sentence only, ending with ?
 - Be controversial but appropriate, open to both sides
-- Topics: technology, environment, education, health, society
 - No explanation, just the question`;
 
 export const FLUENCY_CONTINUE_PROMPT = `You are a debate opponent for B1-C1 English learners. Topic: "{topic}"

@@ -48,6 +48,23 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
           <p class="trace-empty">Speak to get automatic corrections</p>
         </div>
       </aside>
+
+      <aside class="pomodoro-panel">
+        <h3>Pomodoro</h3>
+        <div class="pomodoro-time" id="pomodoro-time">25:00</div>
+        <div class="pomodoro-controls">
+          <button id="pomodoro-toggle" class="pomodoro-btn icon" aria-label="Start"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+          <button id="pomodoro-reset" class="pomodoro-btn icon ghost" aria-label="Reset"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+        </div>
+
+        <div class="panel-divider"></div>
+
+        <h3 class="expressions-title">New expressions</h3>
+        <p class="expressions-hint">Select text anywhere and right-click to save it here</p>
+        <div id="expressions-list" class="expressions-list">
+          <p class="expressions-empty">No expressions saved yet</p>
+        </div>
+      </aside>
     </div>
   </main>
 
@@ -117,6 +134,167 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       }
     });
   })();
+
+  // Pomodoro timer: 25 min work / 5 min break, with pause/resume
+  (() => {
+    const WORK_MIN = 25;
+    const BREAK_MIN = 5;
+    const timeEl = document.getElementById('pomodoro-time');
+    const toggleBtn = document.getElementById('pomodoro-toggle');
+    const resetBtn = document.getElementById('pomodoro-reset');
+    if (!timeEl || !toggleBtn || !resetBtn) return;
+
+    let mode = 'work';
+    let remaining = WORK_MIN * 60;
+    let running = false;
+    let intervalId = null;
+    let endTime = 0;
+    let ringCtx = null;
+
+    function ensureRingCtx() {
+      if (!ringCtx) {
+        const Ctx = window.AudioContext || window.webkitAudioContext;
+        ringCtx = new Ctx();
+      }
+      if (ringCtx.state === 'suspended') ringCtx.resume();
+      return ringCtx;
+    }
+
+    function playRing() {
+      try {
+        if (!ringCtx) return;
+        const ctx = ringCtx;
+        const now = ctx.currentTime;
+        const notes = [880, 880, 880, 660];
+        const step = 0.3;
+        const dur = 0.22;
+        notes.forEach((freq, i) => {
+          const start = now + i * step;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + dur + 0.05);
+        });
+      } catch (e) {
+        console.error('Ring sound error:', e);
+      }
+    }
+
+    function fmt(totalSeconds) {
+      const s = Math.max(0, Math.ceil(totalSeconds));
+      return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    }
+
+    const playIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    const pauseIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+
+    function render() {
+      timeEl.textContent = fmt(remaining);
+      toggleBtn.innerHTML = running ? pauseIcon : playIcon;
+      toggleBtn.setAttribute('aria-label', running ? 'Pause' : 'Start');
+      toggleBtn.classList.toggle('active', running);
+      toggleBtn.classList.toggle('hidden', remaining === 0);
+    }
+
+    function tick() {
+      remaining = Math.max(0, (endTime - Date.now()) / 1000);
+      if (remaining <= 0) {
+        clearInterval(intervalId);
+        running = false;
+        switchMode();
+      }
+      render();
+    }
+
+    function switchMode() {
+      playRing();
+      mode = mode === 'work' ? 'break' : 'work';
+      remaining = (mode === 'work' ? WORK_MIN : BREAK_MIN) * 60;
+      startTimer();
+    }
+
+    function startTimer() {
+      if (remaining <= 0) return;
+      running = true;
+      endTime = Date.now() + remaining * 1000;
+      clearInterval(intervalId);
+      intervalId = setInterval(tick, 200);
+      render();
+    }
+
+    function pauseTimer() {
+      running = false;
+      clearInterval(intervalId);
+      intervalId = null;
+      render();
+    }
+
+    function resetTimer() {
+      running = false;
+      clearInterval(intervalId);
+      intervalId = null;
+      mode = 'work';
+      remaining = WORK_MIN * 60;
+      render();
+    }
+
+    toggleBtn.addEventListener('click', () => {
+      ensureRingCtx();
+      if (running) pauseTimer();
+      else startTimer();
+    });
+
+    resetBtn.addEventListener('click', resetTimer);
+
+    render();
+  })();
+
+  // New Expressions panel: load saved expressions as mini cards
+  const expressionsList = document.getElementById('expressions-list');
+  async function loadExpressions() {
+    if (!expressionsList) return;
+    try {
+      const res = await fetch('/api/expressions');
+      const data = await res.json();
+      if (data.expressions) {
+        if (data.expressions.length === 0) {
+          expressionsList.innerHTML = '<p class="expressions-empty">No expressions saved yet</p>';
+        } else {
+          expressionsList.innerHTML = data.expressions
+            .map((e) => `
+              <div class="miniTarjeta">
+                <span class="miniTarjeta-text">${e.expression}</span>
+                <button class="miniTarjeta-check" data-id="${e.id}" title="Mark as learned">✔</button>
+              </div>`)
+            .join('');
+        }
+      }
+    } catch (error) {
+      console.error('Error loading expressions:', error);
+    }
+  }
+  loadExpressions();
+
+  // Delete expression on check click
+  expressionsList?.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement).closest('.miniTarjeta-check');
+    if (!btn) return;
+    const id = (btn as HTMLElement).dataset.id;
+    if (!id) return;
+    try {
+      await fetch(`/api/expressions/${id}`, { method: 'DELETE' });
+      await loadExpressions();
+    } catch (error) {
+      console.error('Error deleting expression:', error);
+    }
+  });
 
   // Debate topic handling
   const topicTextEl = document.getElementById('fluency-topic-text');
@@ -369,6 +547,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       const res = await fetch('/api/expressions/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contextMenuItem) });
       const data = await res.json();
       if (data.error) alert(`Error: ${data.error}`);
+      else await loadExpressions();
     } catch (e) { console.error(e); }
   });
   document.getElementById('ctx-translate')?.addEventListener('click', async () => {
@@ -445,4 +624,188 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
   .translation-close { position: absolute; top: 4px; right: 6px; width: 22px; height: 22px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; }
   .translation-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; color: var(--primary); margin-bottom: 0.3rem; }
   .translation-content { font-size: 0.85rem; line-height: 1.45; white-space: pre-wrap; }
+
+  .pomodoro-panel {
+    width: 220px;
+    flex-shrink: 0;
+    background: var(--surface);
+    border-radius: var(--border-radius);
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.75rem;
+    border-left: 1px solid rgba(255,255,255,0.06);
+  }
+
+  .pomodoro-panel h3 {
+    font-size: 1rem;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin: 0;
+  }
+
+  .pomodoro-panel h3::before {
+    content: '⏱️';
+    font-size: 1.1rem;
+  }
+
+  .pomodoro-time {
+    font-size: 3rem;
+    font-weight: 700;
+    font-family: monospace;
+    font-variant-numeric: tabular-nums;
+    color: var(--text);
+    line-height: 1;
+  }
+
+  .pomodoro-controls {
+    display: flex;
+    gap: 0.5rem;
+    width: 100%;
+    justify-content: center;
+  }
+
+  .pomodoro-btn {
+    flex: 1;
+    padding: 0.55rem 0.5rem;
+    border: none;
+    border-radius: 8px;
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: white;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.3);
+  }
+
+  .pomodoro-btn.icon {
+    flex: 0 0 36px;
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    border-radius: 50%;
+    display: grid;
+    place-items: center;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    box-shadow: none;
+    color: var(--text-muted);
+  }
+
+  .pomodoro-btn.icon:hover {
+    background: rgba(255,255,255,0.12);
+    color: var(--text);
+    transform: none;
+    box-shadow: none;
+  }
+
+  .pomodoro-btn.icon.active {
+    background: linear-gradient(135deg, var(--primary), #8b5cf6);
+    color: white;
+    border-color: transparent;
+  }
+
+  .pomodoro-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+  }
+
+  .pomodoro-btn.icon:hover {
+    transform: none;
+    box-shadow: none;
+  }
+
+  .pomodoro-btn.ghost {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.15);
+    color: var(--text);
+    box-shadow: none;
+  }
+
+  .pomodoro-btn.ghost:hover {
+    border-color: var(--primary);
+    color: var(--primary);
+    background: rgba(59, 130, 246, 0.08);
+  }
+
+  .pomodoro-btn.hidden { display: none; }
+
+  .panel-divider {
+    width: 100%;
+    height: 1px;
+    background: rgba(255,255,255,0.08);
+    margin: 0.25rem 0;
+  }
+
+  .pomodoro-panel h3.expressions-title::before {
+    content: '✨';
+  }
+
+  .pomodoro-panel h3:not(:first-child) { margin-top: 0.25rem; }
+
+  .expressions-hint {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.4;
+    margin: 0;
+  }
+
+  .expressions-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.6rem;
+    min-height: 120px;
+    width: 100%;
+  }
+
+  .expressions-empty {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    text-align: center;
+    padding: 1.5rem 0;
+  }
+
+  .miniTarjeta {
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 8px 12px;
+    background-color: var(--surface-light);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+    max-width: 100%;
+    color: var(--text);
+    font-size: 0.82rem;
+    line-height: 1.4;
+    word-break: break-word;
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .miniTarjeta-text { flex: 1; }
+
+  .miniTarjeta-check {
+    flex-shrink: 0;
+    width: 26px;
+    height: 26px;
+    border: 1px solid rgba(74, 222, 128, 0.5);
+    border-radius: 50%;
+    background: transparent;
+    color: #4ade80;
+    font-size: 0.85rem;
+    line-height: 1;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .miniTarjeta-check:hover {
+    background: rgba(74, 222, 128, 0.15);
+    transform: scale(1.1);
+  }
 </style>
