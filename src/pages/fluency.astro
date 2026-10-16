@@ -17,6 +17,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       <nav class="nav-links nav-toggle">
         <a href="/" class="nav-link">Chat mode</a>
         <a href="/fluency" class="nav-link active">Debate mode</a>
+        <a href="/dice" class="nav-link">Dice mode</a>
       </nav>
     </header>
 
@@ -391,7 +392,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
 </script>
 
 <style is:global>
-  .app { display: flex; flex-direction: column; height: 100vh; max-width: 1420px; margin: 0 auto; padding: 1rem; }
+  .app { display: flex; flex-direction: column; height: 100vh; width: 100%; max-width: 1420px; margin: 0 auto; padding: 1rem; }
   .header { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0.5rem 0; }
   .header-main { text-align: center; }
   .header h1 { font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
