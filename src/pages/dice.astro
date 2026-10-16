@@ -1,0 +1,540 @@
+---
+import Layout from '../layouts/Layout.astro';
+import DiceRecorder from '../components/DiceRecorder.astro';
+---
+
+<Layout title="Dice Roller">
+  <main class="app">
+    <header class="header">
+      <button id="settings-btn" class="gear-btn" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.72l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+      </button>
+      <div class="header-main">
+        <h1>Dice Roller</h1>
+        <p class="subtitle">Roll the 12-sided die and answer the question out loud</p>
+      </div>
+      <nav class="nav-links nav-toggle">
+        <a href="/" class="nav-link">Chat mode</a>
+        <a href="/fluency" class="nav-link">Debate mode</a>
+        <a href="/dice" class="nav-link active">Dice mode</a>
+      </nav>
+    </header>
+
+    <div class="main-content">
+      <div class="chat-area">
+        <section class="dice-card">
+          <div class="dice-stage">
+            <div id="dice-die" class="die">
+              <span id="dice-number" class="die-number">12</span>
+              <span class="die-label">D12</span>
+            </div>
+            <button id="roll-btn" class="roll-btn">Roll the die</button>
+          </div>
+
+          <div id="dice-result" class="dice-result hidden">
+            <span id="dice-structure-badge" class="structure-badge">Structure</span>
+            <p id="dice-question" class="dice-question"></p>
+            <button id="dice-listen" class="listen-btn" type="button">&#9654; Listen</button>
+          </div>
+
+          <div id="dice-current" data-structure-code="" data-structure-label="" data-question="" hidden></div>
+        </section>
+
+        <section class="chat-container">
+          <div id="dice-chat" class="chat-display"></div>
+        </section>
+
+        <section class="controls">
+          <DiceRecorder />
+        </section>
+      </div>
+
+      <aside class="trace-panel">
+        <h3>Automatic corrections</h3>
+        <span class="trace-hint">Corrections from your last answer</span>
+        <button id="clear-dice" class="clear-btn">Clean corrections</button>
+        <div id="dice-trace-results" class="trace-results">
+          <p class="trace-empty">Roll the die and answer to get corrections</p>
+        </div>
+      </aside>
+    </div>
+  </main>
+
+  <div id="warmup-modal" class="modal-overlay">
+    <div class="modal-box">
+      <div class="modal-spinner"></div>
+      <p>Sending conversation and corrections system prompt to cache...</p>
+    </div>
+  </div>
+
+  <div id="settings-modal" class="modal-overlay hidden">
+    <div class="modal-box settings-box" style="background:var(--surface);border:1px solid rgba(255,255,255,0.08);color:var(--text);max-width:380px;width:90%;padding:1.5rem;border-radius:12px">
+      <h3 style="margin:0 0 0.25rem;font-size:1rem">Settings</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 1rem">Maintenance actions</p>
+      <button id="clear-db-btn" class="clear-btn" style="width:100%">Clear database</button>
+      <p style="font-size:0.7rem;color:var(--text-muted);margin:0.5rem 0 0;text-align:center">Deletes corrections, debates, messages, expressions and logs. Keeps patterns.</p>
+      <button id="settings-close" class="clear-btn" style="width:100%;margin-top:0.75rem;border-color:rgba(255,255,255,0.15);color:var(--text)">Close</button>
+    </div>
+  </div>
+
+  <div id="ctx-menu" class="ctx-menu" style="display:none">
+    <button id="ctx-add-expression" class="ctx-item">Save to New Expressions</button>
+    <button id="ctx-translate" class="ctx-item">Translate to Spanish</button>
+  </div>
+
+  <div id="translation-popup" class="translation-popup" style="display:none">
+    <button id="translation-close" class="translation-close" title="Close">×</button>
+    <div class="translation-label">Translation</div>
+    <div id="translation-content" class="translation-content"></div>
+  </div>
+</Layout>
+
+<script>
+  // Warm up the system prompt cache on page load
+  (async () => {
+    try {
+      await fetch('/api/warmup', { method: 'POST' });
+    } finally {
+      const modal = document.getElementById('warmup-modal');
+      if (modal) modal.classList.add('hidden');
+    }
+  })();
+
+  // Settings modal
+  (() => {
+    const gear = document.getElementById('settings-btn');
+    const sModal = document.getElementById('settings-modal');
+    const sClose = document.getElementById('settings-close');
+    const clearBtn = document.getElementById('clear-db-btn') as HTMLButtonElement | null;
+    gear?.addEventListener('click', () => sModal?.classList.remove('hidden'));
+    sClose?.addEventListener('click', () => sModal?.classList.add('hidden'));
+    sModal?.addEventListener('click', (e) => { if (e.target === sModal) sModal.classList.add('hidden'); });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') sModal?.classList.add('hidden'); });
+    clearBtn?.addEventListener('click', async () => {
+      if (!confirm('Clear database? Corrections, debates, messages, expressions and logs will be deleted. This cannot be undone.')) return;
+      clearBtn.disabled = true;
+      clearBtn.textContent = 'Clearing...';
+      try {
+        const res = await fetch('/api/clear-all', { method: 'POST' });
+        const data = await res.json();
+        if (data.error) alert(data.error);
+        else location.reload();
+      } catch (e) {
+        alert('Error clearing');
+      } finally {
+        clearBtn.disabled = false;
+        clearBtn.textContent = 'Clear database';
+        sModal?.classList.add('hidden');
+      }
+    });
+  })();
+
+  // Die roll
+  const rollBtn = document.getElementById('roll-btn') as HTMLButtonElement | null;
+  const die = document.getElementById('dice-die');
+  const numberEl = document.getElementById('dice-number');
+  const resultEl = document.getElementById('dice-result');
+  const badgeEl = document.getElementById('dice-structure-badge');
+  const questionEl = document.getElementById('dice-question');
+  const currentEl = document.getElementById('dice-current');
+  let rolling = false;
+
+  function showResult(data: any) {
+    if (badgeEl) badgeEl.textContent = `${data.label} · die ${data.roll}`;
+    if (questionEl) questionEl.textContent = data.question;
+    resultEl?.classList.remove('hidden');
+    if (currentEl) {
+      currentEl.dataset.structureCode = data.code ?? '';
+      currentEl.dataset.structureLabel = data.label ?? '';
+      currentEl.dataset.question = data.question ?? '';
+    }
+  }
+
+  async function rollDie() {
+    if (rolling || !rollBtn) return;
+    rolling = true;
+    rollBtn.disabled = true;
+    resultEl?.classList.add('hidden');
+    die?.classList.add('rolling');
+    resetCorrections();
+    const spin = setInterval(() => {
+      if (numberEl) numberEl.textContent = String(1 + Math.floor(Math.random() * 12));
+    }, 80);
+    try {
+      const res = await fetch('/api/dice-roll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: '{}',
+      });
+      const data = await res.json();
+      await new Promise((r) => setTimeout(r, 600));
+      clearInterval(spin);
+      if (numberEl) numberEl.textContent = String(data.roll ?? '?');
+      if (data.question) {
+        showResult(data);
+      } else if (questionEl && resultEl) {
+        questionEl.textContent = 'Could not get a question. Try again.';
+        resultEl.classList.remove('hidden');
+      }
+    } catch (e) {
+      clearInterval(spin);
+      console.error(e);
+      if (questionEl && resultEl) {
+        questionEl.textContent = 'Error rolling the die. Try again.';
+        resultEl.classList.remove('hidden');
+      }
+    } finally {
+      die?.classList.remove('rolling');
+      rollBtn.disabled = false;
+      rolling = false;
+    }
+  }
+
+  rollBtn?.addEventListener('click', rollDie);
+
+  // Listen to the generated question
+  let questionAudio: HTMLAudioElement | null = null;
+  document.getElementById('dice-listen')?.addEventListener('click', async (e) => {
+    const text = questionEl?.textContent?.trim() ?? '';
+    if (!text) return;
+    const btn = e.currentTarget as HTMLButtonElement;
+    try {
+      btn.disabled = true;
+      const res = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      if (!res.ok) throw new Error('TTS failed');
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      if (questionAudio) questionAudio.pause();
+      questionAudio = new Audio(url);
+      questionAudio.onended = () => { btn.disabled = false; URL.revokeObjectURL(url); };
+      await questionAudio.play();
+    } catch (err) {
+      console.error('TTS error:', err);
+      btn.disabled = false;
+    }
+  });
+
+  // Corrections polling for the current answer
+  let dicePollingId: ReturnType<typeof setInterval> | null = null;
+  let lastDiceCorrectionId = 0;
+  let isFirstDiceLoad = true;
+  let currentDiceDebateId: number | null = null;
+
+  function resetCorrections() {
+    const results = document.getElementById('dice-trace-results');
+    if (results) results.innerHTML = '<p class="trace-empty">Roll the die and answer to get corrections</p>';
+    lastDiceCorrectionId = 0;
+    isFirstDiceLoad = true;
+    currentDiceDebateId = null;
+  }
+
+  window.addEventListener('dice-submitted', (event: any) => {
+    const debateId = event.detail?.debateId;
+    if (!debateId) return;
+    currentDiceDebateId = debateId;
+    lastDiceCorrectionId = 0;
+    isFirstDiceLoad = true;
+    const results = document.getElementById('dice-trace-results');
+    if (results) results.innerHTML = '<p class="trace-loading">Analyzing your answer...</p>';
+  });
+
+  function updateDiceStatus(msg: string) {
+    const results = document.getElementById('dice-trace-results');
+    if (!results) return;
+    let statusEl = results.querySelector('.trace-status') as HTMLElement | null;
+    if (!statusEl) {
+      statusEl = document.createElement('p');
+      statusEl.className = 'trace-status trace-loading';
+    }
+    statusEl.textContent = msg;
+    if (results.firstChild !== statusEl) results.prepend(statusEl);
+  }
+
+  function removeDiceStatus() {
+    const results = document.getElementById('dice-trace-results');
+    if (!results) return;
+    const statusEl = results.querySelector('.trace-status');
+    if (statusEl) statusEl.remove();
+  }
+
+  function renderDiceCard(corr: any): string {
+    const hasTime = corr.processing_ms != null;
+    const timeLabel = hasTime ? Math.round(corr.processing_ms / 1000) + 's' : '-';
+    return `
+        <div class="corr-card" data-id="${corr.id}">
+          <div class="corr-header"><span class="corr-time">${timeLabel}</span><span class="corr-tag">${corr.label || corr.code}</span></div>
+          <div class="corr-row"><span class="corr-bad">${corr.original}</span></div>
+          <div class="corr-row"><span class="corr-arrow">→</span><span class="corr-good">${corr.corrected}</span></div>
+        </div>`;
+  }
+
+  function renderAllDiceCorrections(corrections: any[]) {
+    const results = document.getElementById('dice-trace-results');
+    if (!results) return;
+    if (!corrections || corrections.length === 0) {
+      results.innerHTML = '<p class="trace-empty">No errors found in your answer. Great job!</p>';
+      return;
+    }
+    let html = '<div class="trace-cards">';
+    for (const corr of corrections) html += renderDiceCard(corr);
+    html += '</div>';
+    results.innerHTML = html;
+    let maxId = 0;
+    for (const corr of corrections) if (corr.id > maxId) maxId = corr.id;
+    if (maxId > lastDiceCorrectionId) lastDiceCorrectionId = maxId;
+  }
+
+  function appendNewDiceCorrections(corrections: any[]) {
+    if (!corrections || corrections.length === 0) return;
+    const results = document.getElementById('dice-trace-results');
+    if (!results) return;
+    let container = results.querySelector('.trace-cards') as HTMLElement | null;
+    if (!container) {
+      const empty = results.querySelector('.trace-empty');
+      if (empty) empty.remove();
+      container = document.createElement('div');
+      container.className = 'trace-cards';
+      const statusEl = results.querySelector('.trace-status');
+      if (statusEl) statusEl.after(container);
+      else results.appendChild(container);
+    }
+    for (const corr of corrections) {
+      const card = document.createElement('div');
+      card.innerHTML = renderDiceCard(corr).trim();
+      const cardEl = card.firstElementChild as HTMLElement;
+      if (cardEl && container) container.prepend(cardEl);
+      if (corr.id > lastDiceCorrectionId) lastDiceCorrectionId = corr.id;
+    }
+  }
+
+  function renderDicePanel(data: any) {
+    const results = document.getElementById('dice-trace-results');
+    if (!results) return;
+    if (!currentDiceDebateId) {
+      if (isFirstDiceLoad) {
+        renderAllDiceCorrections([]);
+        isFirstDiceLoad = false;
+        removeDiceStatus();
+      }
+      return;
+    }
+    if (isFirstDiceLoad) {
+      const initial = (data.corrections ?? data.newCorrections ?? []) as any[];
+      const filtered = initial.filter((c: any) => c.debate_id === currentDiceDebateId);
+      renderAllDiceCorrections(filtered);
+      isFirstDiceLoad = false;
+      if (data.analyzing && data.queueLength > 0) updateDiceStatus(`Analyzing... (${data.queueLength} in queue)`);
+      else if (data.analyzing) updateDiceStatus('Analyzing your answer');
+      else removeDiceStatus();
+      return;
+    }
+    if (data.newCorrections?.length) {
+      const nuevos = (data.newCorrections as any[]).filter((c: any) => c.debate_id === currentDiceDebateId);
+      if (nuevos.length) appendNewDiceCorrections(nuevos);
+    } else if (data.corrections?.length) {
+      const nuevos = (data.corrections as any[])
+        .filter((c: any) => c.debate_id === currentDiceDebateId && c.id > lastDiceCorrectionId)
+        .sort((a: any, b: any) => a.id - b.id);
+      if (nuevos.length) appendNewDiceCorrections(nuevos);
+    }
+    if (data.analyzing && data.queueLength > 0) updateDiceStatus(`Analyzing... (${data.queueLength} in queue)`);
+    else if (data.analyzing) updateDiceStatus('Analyzing your answer');
+    else removeDiceStatus();
+  }
+
+  async function pollDiceCorrections() {
+    try {
+      if (!currentDiceDebateId) {
+        if (isFirstDiceLoad) {
+          renderAllDiceCorrections([]);
+          isFirstDiceLoad = false;
+          removeDiceStatus();
+        }
+        return;
+      }
+      const res = await fetch(`/api/fluency-corrections-status?since=${lastDiceCorrectionId}&debateId=${currentDiceDebateId}`);
+      const data = await res.json();
+      renderDicePanel(data);
+    } catch (e) {
+      console.error('[pollDice]', e);
+    }
+  }
+
+  function startDicePolling() {
+    if (dicePollingId) return;
+    pollDiceCorrections();
+    dicePollingId = setInterval(pollDiceCorrections, 3000);
+  }
+
+  startDicePolling();
+
+  document.getElementById('clear-dice')?.addEventListener('click', () => {
+    resetCorrections();
+    const results = document.getElementById('dice-trace-results');
+    if (results) results.innerHTML = '<p class="trace-empty">Corrections cleared.</p>';
+  });
+
+  // Context menu + translation popup (shared behaviour with other modes)
+  const contextMenu = document.getElementById('ctx-menu');
+  const translationPopup = document.getElementById('translation-popup');
+  const translationContent = document.getElementById('translation-content');
+  let contextMenuItem: any = null;
+
+  function positionPopup(element: HTMLElement, clientX: number, clientY: number) {
+    const rect = element.getBoundingClientRect();
+    const margin = 8;
+    let left = clientX;
+    let top = clientY + margin;
+    if (left + rect.width > window.innerWidth - margin) left = Math.max(margin, window.innerWidth - rect.width - margin);
+    if (top + rect.height > window.innerHeight - margin) top = Math.max(margin, clientY - rect.height - margin);
+    element.style.left = `${left}px`;
+    element.style.top = `${top}px`;
+  }
+
+  document.addEventListener('contextmenu', (event) => {
+    const target = event.target as HTMLElement;
+    if (target.closest('#ctx-menu, #translation-popup, #warmup-modal')) return;
+    if (target.closest('#dice-transcript-modal')) return;
+    const selection = window.getSelection()?.toString().trim() ?? '';
+    if (!selection) return;
+    event.preventDefault();
+    contextMenuItem = { expression: selection, text: selection, x: event.clientX, y: event.clientY };
+    if (contextMenu) {
+      contextMenu.style.display = 'block';
+      positionPopup(contextMenu, event.clientX, event.clientY);
+    }
+    hideTranslationPopup();
+  });
+
+  function hideContextMenu() { if (contextMenu) contextMenu.style.display = 'none'; }
+  function hideTranslationPopup() {
+    if (translationPopup) {
+      translationPopup.style.display = 'none';
+      if (translationContent) translationContent.textContent = '';
+    }
+  }
+  document.addEventListener('click', (event) => {
+    hideContextMenu();
+    if (translationPopup && !translationPopup.contains(event.target as Node) && !(event.target as HTMLElement).closest('#ctx-translate')) hideTranslationPopup();
+  });
+  document.addEventListener('keydown', (event) => { if (event.key !== 'Escape') return; hideContextMenu(); hideTranslationPopup(); });
+
+  document.getElementById('ctx-add-expression')?.addEventListener('click', async () => {
+    hideContextMenu();
+    if (!contextMenuItem) return;
+    try {
+      const res = await fetch('/api/expressions/add', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(contextMenuItem),
+      });
+      const data = await res.json();
+      if (data.error) alert(`Error: ${data.error}`);
+    } catch (e) { console.error(e); }
+  });
+
+  document.getElementById('ctx-translate')?.addEventListener('click', async () => {
+    hideContextMenu();
+    if (!contextMenuItem || !translationPopup || !translationContent) return;
+    const { text, x, y } = contextMenuItem;
+    if (!text) return;
+    positionPopup(translationPopup, x, y);
+    translationPopup.style.display = 'block';
+    translationContent.textContent = 'Translating…';
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text }),
+      });
+      const data = await res.json();
+      if (data.error) translationContent.textContent = `Error: ${data.error}`;
+      else if (data.translated) translationContent.textContent = data.translated;
+      else translationContent.textContent = 'Could not translate text.';
+    } catch (e) { console.error(e); translationContent.textContent = 'Translation connection error.'; }
+  });
+
+  document.getElementById('translation-close')?.addEventListener('click', hideTranslationPopup);
+</script>
+
+<style is:global>
+  .app { display: flex; flex-direction: column; height: 100vh; width: 100%; max-width: 1420px; margin: 0 auto; padding: 1rem; }
+  .header { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0.5rem 0; }
+  .header-main { text-align: center; }
+  .header h1 { font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+  .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem; }
+  .nav-links.nav-toggle { position: absolute; top: 0.75rem; right: 1rem; display: inline-flex; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.05); }
+  .nav-links.nav-toggle .nav-link { padding: 0.4rem 0.8rem; font-size: 0.8rem; text-decoration: none; color: var(--text-muted); transition: all 0.15s; border-right: 1px solid rgba(255,255,255,0.1); background: transparent; border-radius: 0; }
+  .nav-links.nav-toggle .nav-link:last-child { border-right: none; }
+  .nav-links.nav-toggle .nav-link.active { background: linear-gradient(135deg, var(--primary), #8b5cf6); color: white; }
+  .nav-links.nav-toggle .nav-link:hover:not(.active) { background: rgba(255,255,255,0.08); color: var(--text); }
+  .gear-btn { position: absolute; top: 0.75rem; left: 1rem; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(255,255,255,0.05); color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
+  .gear-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); border-color: var(--primary); }
+  .main-content { display: flex; flex: 1; gap: 1rem; min-height: 0; }
+  .chat-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+
+  .dice-card { background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; border-left: 3px solid var(--primary); display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
+  .dice-stage { display: flex; flex-direction: column; align-items: center; gap: 0.85rem; }
+  .die { width: 120px; height: 120px; display: grid; place-items: center; grid-template-rows: auto auto; background: linear-gradient(135deg, var(--primary), #8b5cf6); clip-path: polygon(50% 0%, 75% 6.7%, 93.3% 25%, 100% 50%, 93.3% 75%, 75% 93.3%, 50% 100%, 25% 93.3%, 6.7% 75%, 0% 50%, 6.7% 25%, 25% 6.7%); filter: drop-shadow(0 8px 20px rgba(59,130,246,0.45)); }
+  .die.rolling { animation: diceRoll 0.6s ease-in-out; }
+  @keyframes diceRoll { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(360deg) scale(1.12); } 100% { transform: rotate(720deg) scale(1); } }
+  .die-number { font-size: 2.6rem; font-weight: 800; color: #fff; line-height: 1; }
+  .die-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; color: rgba(255,255,255,0.85); }
+  .roll-btn { padding: 0.6rem 1.4rem; border: none; border-radius: 8px; background: linear-gradient(135deg, var(--primary), #8b5cf6); color: #fff; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 14px rgba(59,130,246,0.35); }
+  .roll-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(59,130,246,0.45); }
+  .roll-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .dice-result { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 0.6rem; text-align: center; animation: fadeIn 0.3s ease-out; }
+  .dice-result.hidden { display: none; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  .structure-badge { display: inline-block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--primary); background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.35); padding: 0.3rem 0.7rem; border-radius: 999px; }
+  .dice-question { font-size: 1.05rem; line-height: 1.5; color: var(--text); font-style: italic; max-width: 640px; min-height: 1.5rem; }
+  .listen-btn { padding: 0.35rem 0.9rem; border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; background: transparent; color: var(--text-muted); font-size: 0.8rem; cursor: pointer; transition: all 0.15s; }
+  .listen-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: rgba(59,130,246,0.08); }
+  .listen-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .chat-container { flex: 1; overflow-y: auto; background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; }
+  .controls { display: flex; justify-content: center; padding: 0.5rem 0; }
+  .trace-panel { width: 340px; flex-shrink: 0; background: var(--surface); border-radius: var(--border-radius); padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; border-left: 1px solid rgba(255,255,255,0.06); }
+  .trace-panel h3 { font-size: 1rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; margin: 0; }
+  .trace-panel h3::before { content: '📝'; font-size: 1.1rem; }
+  .trace-hint { font-size: 0.7rem; color: var(--text-muted); }
+  .clear-btn { padding: 0.6rem 1rem; border: 1px solid var(--recording, #dc2626); border-radius: 8px; background: transparent; color: var(--recording, #dc2626); font-size: 0.85rem; cursor: pointer; }
+  .clear-btn:hover:not(:disabled) { background: rgba(220,38,38,0.1); }
+  .trace-results { flex: 1; overflow-y: auto; font-size: 0.85rem; line-height: 1.5; }
+  .trace-empty, .trace-loading { color: var(--text-muted); text-align: center; padding: 1.5rem 0; font-size: 0.85rem; }
+  .trace-cards { display: flex; flex-direction: column; gap: 0.75rem; }
+  .corr-header { display: flex; align-items: center; gap: 0.35rem; }
+  .corr-time { align-self: flex-start; font-size: 0.6rem; font-weight: 700; font-family: monospace; font-variant-numeric: tabular-nums; color: var(--text-muted); background: rgba(255,255,255,0.08); padding: 0.15rem 0.35rem; border-radius: 4px; min-width: 2.2em; text-align: center; }
+  .corr-tag { align-self: flex-start; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--primary); background: rgba(59,130,246,0.1); padding: 0.15rem 0.4rem; border-radius: 4px; }
+  .corr-card { background: #0f172a; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.3rem; }
+  .corr-row { display: flex; align-items: flex-start; gap: 0.35rem; padding: 0.25rem 0.4rem; border-radius: 5px; }
+  .corr-row:first-of-type { background: rgba(248,113,113,0.08); border-left: 3px solid #f87171; }
+  .corr-row:last-of-type { background: rgba(74,222,128,0.08); border-left: 3px solid #4ade80; }
+  .corr-bad { color: #fca5a5; font-size: 0.8rem; text-decoration: line-through; text-decoration-color: #f87171; }
+  .corr-arrow { color: var(--text-muted); font-size: 0.8rem; }
+  .corr-good { color: #86efac; font-size: 0.85rem; font-weight: 500; }
+  .chat-display { display: flex; flex-direction: column; gap: 0.5rem; height: 100%; overflow-y: auto; padding: 0.5rem; }
+  .message { display: flex; animation: slideIn 0.25s ease-out; }
+  .message.user { justify-content: flex-end; }
+  .message .content { background: #8b5cf6; color: white; padding: 0.7rem 1rem; border-radius: 12px; max-width: 75%; }
+  .message .content p { margin: 0; line-height: 1.45; font-size: 0.9rem; }
+  @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+  .modal-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
+  .modal-overlay.hidden { display: none; }
+  .modal-box { background: #fff; border-radius: 12px; padding: 28px 36px; max-width: 420px; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,0.3); color: #333; }
+  .modal-spinner { width: 36px; height: 36px; margin: 0 auto 16px; border: 4px solid rgba(0,0,0,0.12); border-top-color: #6b46c1; border-radius: 50%; animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .ctx-menu { position: fixed; z-index: 9998; background: #0f172a; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 0.25rem; box-shadow: 0 8px 24px rgba(0,0,0,0.4); min-width: 200px; }
+  .ctx-item { display: block; width: 100%; padding: 0.5rem 0.75rem; border: none; background: transparent; color: var(--text); font-size: 0.82rem; text-align: left; border-radius: 6px; cursor: pointer; }
+  .ctx-item:hover { background: rgba(59,130,246,0.15); color: var(--primary); }
+  .translation-popup { position: fixed; z-index: 9998; background: var(--surface-light); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 0.6rem 0.75rem; box-shadow: 0 8px 24px rgba(0,0,0,0.45); max-width: 320px; min-width: 160px; color: var(--text); }
+  .translation-close { position: absolute; top: 4px; right: 6px; width: 22px; height: 22px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; border-radius: 50%; }
+  .translation-close:hover { color: var(--text); background: rgba(255,255,255,0.1); }
+  .translation-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; color: var(--primary); margin-bottom: 0.3rem; padding-right: 1.2rem; }
+  .translation-content { font-size: 0.85rem; line-height: 1.45; white-space: pre-wrap; }
+</style>

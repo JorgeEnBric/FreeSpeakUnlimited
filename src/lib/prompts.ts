@@ -27,6 +27,17 @@ History:
 User's last argument: "{text}"
 Task: Counter-argue the user's last argument in 2-3 sentences, be provocative but respectful, ask a follow-up question to keep the debate going. Keep it conversational and natural.`;
 
+export const DICE_QUESTION_PROMPT = `You are an English teacher creating speaking practice for B1-B2 learners.
+The user message gives you a target grammar structure, and you write ONE short, open question whose answer must naturally use that structure.
+Rules:
+- Reply with ONLY the question: one single sentence ending with exactly one question mark (?)
+- Do not use markdown, asterisks, underscores, quotes, labels, numbering or any explanation
+- Keep vocabulary simple and clear for B1-B2 learners
+- The question must force the target structure, not a different one
+Example:
+Target: Past Simple
+Output: What did you do last weekend?`;
+
 export const SUGGESTION_SYSTEM_PROMPT = `You are an English autocorrection assistant.
 A sentence is provided with the placeholder ___ in the position of one missing word.
 Complete the gap with the SINGLE most natural English word that fits the context.
