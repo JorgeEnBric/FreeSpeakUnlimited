@@ -137,12 +137,14 @@ import DiceRecorder from '../components/DiceRecorder.astro';
   const badgeEl = document.getElementById('dice-structure-badge');
   const questionEl = document.getElementById('dice-question');
   const currentEl = document.getElementById('dice-current');
+  const diceCard = document.querySelector('.dice-card');
   let rolling = false;
 
   function showResult(data: any) {
     if (badgeEl) badgeEl.textContent = `${data.label} · die ${data.roll}`;
     if (questionEl) questionEl.textContent = data.question;
     resultEl?.classList.remove('hidden');
+    diceCard?.classList.add('compact');
     if (currentEl) {
       currentEl.dataset.structureCode = data.code ?? '';
       currentEl.dataset.structureLabel = data.label ?? '';
@@ -155,6 +157,7 @@ import DiceRecorder from '../components/DiceRecorder.astro';
     rolling = true;
     rollBtn.disabled = true;
     resultEl?.classList.add('hidden');
+    diceCard?.classList.remove('compact');
     die?.classList.add('rolling');
     resetCorrections();
     const spin = setInterval(() => {
@@ -167,7 +170,7 @@ import DiceRecorder from '../components/DiceRecorder.astro';
         body: '{}',
       });
       const data = await res.json();
-      await new Promise((r) => setTimeout(r, 600));
+      await new Promise((r) => setTimeout(r, 300));
       clearInterval(spin);
       if (numberEl) numberEl.textContent = String(data.roll ?? '?');
       if (data.question) {
@@ -475,15 +478,15 @@ import DiceRecorder from '../components/DiceRecorder.astro';
   .gear-btn { position: absolute; top: 0.75rem; left: 1rem; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(255,255,255,0.05); color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
   .gear-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); border-color: var(--primary); }
   .main-content { display: flex; flex: 1; gap: 1rem; min-height: 0; }
-  .chat-area { flex: 1; display: flex; flex-direction: column; min-width: 0; }
+  .chat-area { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
-  .dice-card { background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; border-left: 3px solid var(--primary); display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
+  .dice-card { background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; border-left: 3px solid var(--primary); display: flex; flex-direction: column; gap: 0.75rem; align-items: center; transition: padding 0.25s ease, gap 0.25s ease, margin 0.25s ease; }
   .dice-stage { display: flex; flex-direction: column; align-items: center; gap: 0.85rem; }
-  .die { width: 120px; height: 120px; display: grid; place-items: center; grid-template-rows: auto auto; background: linear-gradient(135deg, var(--primary), #8b5cf6); clip-path: polygon(50% 0%, 75% 6.7%, 93.3% 25%, 100% 50%, 93.3% 75%, 75% 93.3%, 50% 100%, 25% 93.3%, 6.7% 75%, 0% 50%, 6.7% 25%, 25% 6.7%); filter: drop-shadow(0 8px 20px rgba(59,130,246,0.45)); }
-  .die.rolling { animation: diceRoll 0.6s ease-in-out; }
+  .die { width: 120px; height: 120px; display: grid; place-items: center; grid-template-rows: auto auto; background: linear-gradient(135deg, var(--primary), #8b5cf6); clip-path: polygon(50% 0%, 75% 6.7%, 93.3% 25%, 100% 50%, 93.3% 75%, 75% 93.3%, 50% 100%, 25% 93.3%, 6.7% 75%, 0% 50%, 6.7% 25%, 25% 6.7%); filter: drop-shadow(0 8px 20px rgba(59,130,246,0.45)); transition: width 0.25s ease, height 0.25s ease; }
+  .die.rolling { animation: diceRoll 0.3s ease-in-out; }
   @keyframes diceRoll { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(360deg) scale(1.12); } 100% { transform: rotate(720deg) scale(1); } }
-  .die-number { font-size: 2.6rem; font-weight: 800; color: #fff; line-height: 1; }
-  .die-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; color: rgba(255,255,255,0.85); }
+  .die-number { font-size: 2.6rem; font-weight: 800; color: #fff; line-height: 1; transition: font-size 0.25s ease; }
+  .die-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; color: rgba(255,255,255,0.85); transition: font-size 0.25s ease; }
   .roll-btn { padding: 0.6rem 1.4rem; border: none; border-radius: 8px; background: linear-gradient(135deg, var(--primary), #8b5cf6); color: #fff; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 14px rgba(59,130,246,0.35); }
   .roll-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(59,130,246,0.45); }
   .roll-btn:disabled { opacity: 0.6; cursor: not-allowed; }
@@ -496,7 +499,17 @@ import DiceRecorder from '../components/DiceRecorder.astro';
   .listen-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: rgba(59,130,246,0.08); }
   .listen-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-  .chat-container { flex: 1; overflow-y: auto; background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; }
+  .dice-card.compact { flex-direction: row; align-items: center; gap: 0.75rem; padding: 0.55rem 0.85rem; margin-bottom: 0.5rem; }
+  .dice-card.compact .dice-stage { gap: 0.35rem; }
+  .dice-card.compact .die { width: 56px; height: 56px; }
+  .dice-card.compact .die-number { font-size: 1.4rem; }
+  .dice-card.compact .die-label { font-size: 0.55rem; letter-spacing: 0.5px; }
+  .dice-card.compact .roll-btn { padding: 0.3rem 0.7rem; font-size: 0.75rem; }
+  .dice-card.compact .dice-result { flex: 1; min-width: 0; align-items: flex-start; text-align: left; gap: 0.3rem; }
+  .dice-card.compact .dice-question { font-size: 0.95rem; }
+  .dice-card.compact .listen-btn { padding: 0.25rem 0.7rem; font-size: 0.75rem; }
+
+  .chat-container { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; }
   .controls { display: flex; justify-content: center; padding: 0.5rem 0; }
   .trace-panel { width: 340px; flex-shrink: 0; background: var(--surface); border-radius: var(--border-radius); padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; border-left: 1px solid rgba(255,255,255,0.06); }
   .trace-panel h3 { font-size: 1rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; margin: 0; }
@@ -517,8 +530,8 @@ import DiceRecorder from '../components/DiceRecorder.astro';
   .corr-bad { color: #fca5a5; font-size: 0.8rem; text-decoration: line-through; text-decoration-color: #f87171; }
   .corr-arrow { color: var(--text-muted); font-size: 0.8rem; }
   .corr-good { color: #86efac; font-size: 0.85rem; font-weight: 500; }
-  .chat-display { display: flex; flex-direction: column; gap: 0.5rem; height: 100%; overflow-y: auto; padding: 0.5rem; }
-  .message { display: flex; animation: slideIn 0.25s ease-out; }
+  .chat-display { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-height: 0; overflow-y: auto; padding: 0.5rem; }
+  .message { display: flex; flex-shrink: 0; animation: slideIn 0.25s ease-out; }
   .message.user { justify-content: flex-end; }
   .message .content { background: #8b5cf6; color: white; padding: 0.7rem 1rem; border-radius: 12px; max-width: 75%; }
   .message .content p { margin: 0; line-height: 1.45; font-size: 0.9rem; }
