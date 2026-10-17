@@ -1,4 +1,13 @@
 ---
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import '@fontsource/ibm-plex-mono/600.css';
+import '../styles/global.css';
+
 interface Props {
   title: string;
 }
@@ -14,39 +23,29 @@ const { title } = Astro.props;
     <meta name="description" content="Practice speaking English without limits" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>{title}</title>
+    <script is:inline>
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t !== 'light' && t !== 'dark') {
+            t = window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+          }
+          document.documentElement.dataset.theme = t;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      })();
+      document.addEventListener('click', function (e) {
+        var el = e.target;
+        var btn = el && el.closest ? el.closest('[data-theme-set]') : null;
+        if (!btn) return;
+        var t = btn.getAttribute('data-theme-set') === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t;
+        try { localStorage.setItem('theme', t); } catch (err) {}
+      });
+    </script>
   </head>
   <body>
     <slot />
   </body>
 </html>
-
-<style is:global>
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
-
-  :root {
-    --primary: #3b82f6;
-    --primary-hover: #2563eb;
-    --background: #0f172a;
-    --surface: #1e293b;
-    --surface-light: #334155;
-    --text: #f1f5f9;
-    --text-muted: #94a3b8;
-    --success: #22c55e;
-    --error: #ef4444;
-    --recording: #dc2626;
-    --border-radius: 12px;
-  }
-
-  body {
-    font-family: system-ui, -apple-system, sans-serif;
-    background: var(--background);
-    color: var(--text);
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-</style>

@@ -68,12 +68,17 @@ import DiceRecorder from '../components/DiceRecorder.astro';
   </div>
 
   <div id="settings-modal" class="modal-overlay hidden">
-    <div class="modal-box settings-box" style="background:var(--surface);border:1px solid rgba(255,255,255,0.08);color:var(--text);max-width:380px;width:90%;padding:1.5rem;border-radius:12px">
-      <h3 style="margin:0 0 0.25rem;font-size:1rem">Settings</h3>
-      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 1rem">Maintenance actions</p>
-      <button id="clear-db-btn" class="clear-btn" style="width:100%">Clear database</button>
-      <p style="font-size:0.7rem;color:var(--text-muted);margin:0.5rem 0 0;text-align:center">Deletes corrections, debates, messages, expressions and logs. Keeps patterns.</p>
-      <button id="settings-close" class="clear-btn" style="width:100%;margin-top:0.75rem;border-color:rgba(255,255,255,0.15);color:var(--text)">Close</button>
+    <div class="modal-box settings-box">
+      <h3 class="settings-title">Settings</h3>
+      <p class="settings-subtitle">Appearance</p>
+      <div class="theme-toggle" role="group" aria-label="Theme">
+        <button type="button" class="theme-option" data-theme-set="dark">Dark</button>
+        <button type="button" class="theme-option" data-theme-set="light">Light</button>
+      </div>
+      <p class="settings-subtitle">Maintenance</p>
+      <button id="clear-db-btn" class="clear-btn settings-action">Clear database</button>
+      <p class="settings-hint">Deletes corrections, debates, messages, expressions and logs. Keeps patterns.</p>
+      <button id="settings-close" class="btn-ghost settings-action">Close</button>
     </div>
   </div>
 
@@ -467,39 +472,25 @@ import DiceRecorder from '../components/DiceRecorder.astro';
   document.getElementById('translation-close')?.addEventListener('click', hideTranslationPopup);
 </script>
 
-<style is:global>
-  .app { display: flex; flex-direction: column; height: 100vh; width: 100%; max-width: 1420px; margin: 0 auto; padding: 1rem; }
-  .header { position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; padding: 0.5rem 0; }
-  .header-main { text-align: center; }
-  .header h1 { font-size: 2rem; font-weight: 700; background: linear-gradient(135deg, var(--primary), #8b5cf6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-  .subtitle { color: var(--text-muted); font-size: 0.9rem; margin-top: 0.25rem; }
-  .nav-links.nav-toggle { position: absolute; top: 0.75rem; right: 1rem; display: inline-flex; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; overflow: hidden; background: rgba(255,255,255,0.05); }
-  .nav-links.nav-toggle .nav-link { padding: 0.4rem 0.8rem; font-size: 0.8rem; text-decoration: none; color: var(--text-muted); transition: all 0.15s; border-right: 1px solid rgba(255,255,255,0.1); background: transparent; border-radius: 0; }
-  .nav-links.nav-toggle .nav-link:last-child { border-right: none; }
-  .nav-links.nav-toggle .nav-link.active { background: linear-gradient(135deg, var(--primary), #8b5cf6); color: white; }
-  .nav-links.nav-toggle .nav-link:hover:not(.active) { background: rgba(255,255,255,0.08); color: var(--text); }
-  .gear-btn { position: absolute; top: 0.75rem; left: 1rem; width: 36px; height: 36px; display: grid; place-items: center; border: 1px solid rgba(255,255,255,0.15); border-radius: 8px; background: rgba(255,255,255,0.05); color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
-  .gear-btn:hover { background: rgba(255,255,255,0.08); color: var(--text); border-color: var(--primary); }
-  .main-content { display: flex; flex: 1; gap: 1rem; min-height: 0; }
-  .chat-area { flex: 1; display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
-  .dice-card { background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; border-left: 3px solid var(--primary); display: flex; flex-direction: column; gap: 0.75rem; align-items: center; transition: padding 0.25s ease, gap 0.25s ease, margin 0.25s ease; }
+<style is:global>
+  .dice-card { background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; border-left: 3px solid var(--accent); display: flex; flex-direction: column; gap: 0.75rem; align-items: center; transition: padding 0.25s ease, gap 0.25s ease, margin 0.25s ease; }
   .dice-stage { display: flex; flex-direction: column; align-items: center; gap: 0.85rem; }
-  .die { width: 120px; height: 120px; display: grid; place-items: center; grid-template-rows: auto auto; background: linear-gradient(135deg, var(--primary), #8b5cf6); clip-path: polygon(50% 0%, 75% 6.7%, 93.3% 25%, 100% 50%, 93.3% 75%, 75% 93.3%, 50% 100%, 25% 93.3%, 6.7% 75%, 0% 50%, 6.7% 25%, 25% 6.7%); filter: drop-shadow(0 8px 20px rgba(59,130,246,0.45)); transition: width 0.25s ease, height 0.25s ease; }
+  .die { width: 120px; height: 120px; display: grid; place-items: center; grid-template-rows: auto auto; background: linear-gradient(135deg, var(--accent), var(--accent-2)); clip-path: polygon(50% 0%, 75% 6.7%, 93.3% 25%, 100% 50%, 93.3% 75%, 75% 93.3%, 50% 100%, 25% 93.3%, 6.7% 75%, 0% 50%, 6.7% 25%, 25% 6.7%); filter: drop-shadow(0 8px 20px var(--accent-glow)); transition: width 0.25s ease, height 0.25s ease; }
   .die.rolling { animation: diceRoll 0.3s ease-in-out; }
   @keyframes diceRoll { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(360deg) scale(1.12); } 100% { transform: rotate(720deg) scale(1); } }
   .die-number { font-size: 2.6rem; font-weight: 800; color: #fff; line-height: 1; transition: font-size 0.25s ease; }
-  .die-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 1px; color: rgba(255,255,255,0.85); transition: font-size 0.25s ease; }
-  .roll-btn { padding: 0.6rem 1.4rem; border: none; border-radius: 8px; background: linear-gradient(135deg, var(--primary), #8b5cf6); color: #fff; font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 14px rgba(59,130,246,0.35); }
-  .roll-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 18px rgba(59,130,246,0.45); }
+  .die-label { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,0.85); transition: font-size 0.25s ease; }
+  .roll-btn { padding: 0.6rem 1.4rem; border: none; border-radius: var(--radius-sm); background: var(--accent); color: var(--on-accent); font-size: 0.95rem; font-weight: 600; cursor: pointer; transition: background 0.2s, transform 0.2s, box-shadow 0.2s; box-shadow: 0 4px 14px var(--accent-glow); }
+  .roll-btn:hover:not(:disabled) { background: var(--accent-hover); transform: translateY(-1px); box-shadow: 0 6px 18px var(--accent-glow); }
   .roll-btn:disabled { opacity: 0.6; cursor: not-allowed; }
   .dice-result { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 0.6rem; text-align: center; animation: fadeIn 0.3s ease-out; }
   .dice-result.hidden { display: none; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
-  .structure-badge { display: inline-block; font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.6px; color: var(--primary); background: rgba(59,130,246,0.12); border: 1px solid rgba(59,130,246,0.35); padding: 0.3rem 0.7rem; border-radius: 999px; }
-  .dice-question { font-size: 1.05rem; line-height: 1.5; color: var(--text); font-style: italic; max-width: 640px; min-height: 1.5rem; }
-  .listen-btn { padding: 0.35rem 0.9rem; border: 1px solid rgba(255,255,255,0.15); border-radius: 999px; background: transparent; color: var(--text-muted); font-size: 0.8rem; cursor: pointer; transition: all 0.15s; }
-  .listen-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: rgba(59,130,246,0.08); }
+  .structure-badge { display: inline-block; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent); background: var(--accent-soft); border: 1px solid var(--border-muted); padding: 0.3rem 0.7rem; border-radius: 999px; }
+  .dice-question { font-size: 1.05rem; line-height: 1.5; color: var(--text); max-width: 640px; min-height: 1.5rem; }
+  .listen-btn { padding: 0.35rem 0.9rem; border: 1px solid var(--border-muted); border-radius: 999px; background: transparent; color: var(--text-muted); font-size: 0.8rem; cursor: pointer; transition: border-color 0.15s, color 0.15s, background 0.15s; }
+  .listen-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
   .listen-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
   .dice-card.compact { flex-direction: row; align-items: center; gap: 0.75rem; padding: 0.55rem 0.85rem; margin-bottom: 0.5rem; }
@@ -512,52 +503,8 @@ import DiceRecorder from '../components/DiceRecorder.astro';
   .dice-card.compact .dice-question { font-size: 0.95rem; }
   .dice-card.compact .listen-btn { padding: 0.25rem 0.7rem; font-size: 0.75rem; }
 
-  .chat-container { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); border-radius: var(--border-radius); padding: 1rem; margin-bottom: 1rem; }
-  .controls { display: flex; justify-content: center; padding: 0.5rem 0; }
-  .trace-panel { width: 340px; flex-shrink: 0; background: var(--surface); border-radius: var(--border-radius); padding: 1rem; display: flex; flex-direction: column; gap: 0.75rem; border-left: 1px solid rgba(255,255,255,0.06); }
-  .trace-panel h3 { font-size: 1rem; color: var(--text); display: flex; align-items: center; gap: 0.5rem; margin: 0; }
-  .trace-panel h3::before { content: '📝'; font-size: 1.1rem; }
-  .trace-hint { font-size: 0.7rem; color: var(--text-muted); }
-  .clear-btn { padding: 0.6rem 1rem; border: 1px solid var(--recording, #dc2626); border-radius: 8px; background: transparent; color: var(--recording, #dc2626); font-size: 0.85rem; cursor: pointer; }
-  .clear-btn:hover:not(:disabled) { background: rgba(220,38,38,0.1); }
-  .trace-results { flex: 1; overflow-y: auto; font-size: 0.85rem; line-height: 1.5; }
-  .trace-empty, .trace-loading { color: var(--text-muted); text-align: center; padding: 1.5rem 0; font-size: 0.85rem; }
-  .trace-cards { display: flex; flex-direction: column; gap: 0.75rem; }
-  .corr-header { display: flex; align-items: center; gap: 0.35rem; }
-  .corr-time { align-self: flex-start; font-size: 0.6rem; font-weight: 700; font-family: monospace; font-variant-numeric: tabular-nums; color: var(--text-muted); background: rgba(255,255,255,0.08); padding: 0.15rem 0.35rem; border-radius: 4px; min-width: 2.2em; text-align: center; }
-  .corr-tag { align-self: flex-start; font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; color: var(--primary); background: rgba(59,130,246,0.1); padding: 0.15rem 0.4rem; border-radius: 4px; }
-  .corr-card { background: #0f172a; border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 0.6rem 0.75rem; display: flex; flex-direction: column; gap: 0.3rem; }
-  .corr-row { display: flex; align-items: flex-start; gap: 0.35rem; padding: 0.25rem 0.4rem; border-radius: 5px; }
-  .corr-row:first-of-type { background: rgba(248,113,113,0.08); border-left: 3px solid #f87171; }
-  .corr-row:last-of-type { background: rgba(74,222,128,0.08); border-left: 3px solid #4ade80; }
-  .corr-bad { color: #fca5a5; font-size: 0.8rem; text-decoration: line-through; text-decoration-color: #f87171; }
-  .corr-arrow { color: var(--text-muted); font-size: 0.8rem; }
-  .corr-good { color: #86efac; font-size: 0.85rem; font-weight: 500; }
-  .chat-display { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; min-height: 0; overflow-y: auto; padding: 0.5rem; }
-  .message { display: flex; flex-shrink: 0; animation: slideIn 0.25s ease-out; }
-  .message.user { justify-content: flex-end; }
-  .message.assistant { align-items: flex-start; gap: 0.5rem; }
-  .message .content { background: var(--surface-light); color: var(--text); padding: 0.7rem 1rem; border-radius: 12px; max-width: 75%; }
-  .message.user .content { background: #8b5cf6; color: white; }
-  .message.suggestions .content { background: rgba(59,130,246,0.08); border: 1px solid rgba(59,130,246,0.3); color: var(--text); max-width: 85%; }
-  .message .content p { margin: 0; line-height: 1.45; font-size: 0.9rem; }
-  .message .avatar { flex-shrink: 0; width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--primary), #8b5cf6); color: white; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.5px; display: flex; align-items: center; justify-content: center; margin-right: 0.5rem; margin-top: 0.2rem; user-select: none; }
-  .suggestions-title { font-weight: 600; font-size: 0.8rem; color: var(--primary); margin: 0 0 0.25rem; }
+  .message.suggestions .content { background: var(--accent-soft); border: 1px solid var(--border-muted); color: var(--text); max-width: 85%; }
+  .suggestions-title { font-weight: 600; font-size: 0.8rem; color: var(--accent); margin: 0 0 0.25rem; }
   .suggestions-list { margin: 0; padding-left: 1.1rem; }
   .suggestions-list li { margin: 0.15rem 0; font-size: 0.85rem; line-height: 1.4; }
-  @keyframes slideIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-
-  .modal-overlay { position: fixed; inset: 0; z-index: 9999; background: rgba(0,0,0,0.55); display: flex; align-items: center; justify-content: center; }
-  .modal-overlay.hidden { display: none; }
-  .modal-box { background: #fff; border-radius: 12px; padding: 28px 36px; max-width: 420px; text-align: center; box-shadow: 0 12px 40px rgba(0,0,0,0.3); color: #333; }
-  .modal-spinner { width: 36px; height: 36px; margin: 0 auto 16px; border: 4px solid rgba(0,0,0,0.12); border-top-color: #6b46c1; border-radius: 50%; animation: spin 0.8s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
-  .ctx-menu { position: fixed; z-index: 9998; background: #0f172a; border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 0.25rem; box-shadow: 0 8px 24px rgba(0,0,0,0.4); min-width: 200px; }
-  .ctx-item { display: block; width: 100%; padding: 0.5rem 0.75rem; border: none; background: transparent; color: var(--text); font-size: 0.82rem; text-align: left; border-radius: 6px; cursor: pointer; }
-  .ctx-item:hover { background: rgba(59,130,246,0.15); color: var(--primary); }
-  .translation-popup { position: fixed; z-index: 9998; background: var(--surface-light); border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; padding: 0.6rem 0.75rem; box-shadow: 0 8px 24px rgba(0,0,0,0.45); max-width: 320px; min-width: 160px; color: var(--text); }
-  .translation-close { position: absolute; top: 4px; right: 6px; width: 22px; height: 22px; border: none; background: transparent; color: var(--text-muted); cursor: pointer; border-radius: 50%; }
-  .translation-close:hover { color: var(--text); background: rgba(255,255,255,0.1); }
-  .translation-label { font-size: 0.6rem; font-weight: 700; text-transform: uppercase; color: var(--primary); margin-bottom: 0.3rem; padding-right: 1.2rem; }
-  .translation-content { font-size: 0.85rem; line-height: 1.45; white-space: pre-wrap; }
 </style>
