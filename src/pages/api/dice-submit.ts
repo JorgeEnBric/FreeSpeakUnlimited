@@ -7,6 +7,7 @@ export const POST: APIRoute = async ({ request }) => {
     const body = await request.json();
     const text = body.text?.trim() ?? '';
     const structure = body.structure?.trim() ?? 'Dice';
+    const code = body.code?.trim() ?? '';
     const question = body.question?.trim() ?? '';
     const durationMs = body.durationMs ? Number(body.durationMs) : 0;
 
@@ -21,7 +22,7 @@ export const POST: APIRoute = async ({ request }) => {
     await initDB();
 
     const topic = `${structure}${question ? ' — ' + question : ''}`.slice(0, 300);
-    const debateId = await insertDebate(topic, text, durationMs);
+    const debateId = await insertDebate(topic, text, durationMs, code || null);
 
     const { notifyDebateMessage } = await import('../../lib/fluencyCorrections');
     notifyDebateMessage(debateId);
