@@ -49,8 +49,150 @@ const { title } = Astro.props;
     <header class="app-header">
       <div class="app-header-inner">
         <h1 class="app-brand">FreeSpeak Unlimited</h1>
+        <div class="verb-scroller" id="verb-scroller" aria-live="polite">
+          <span class="verb-item" id="verb-current">verbs &amp; phrasal verbs loading…</span>
+        </div>
+        <button id="settings-btn" class="gear-btn" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.72l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+        </button>
       </div>
     </header>
+
     <slot />
+
+    <div id="settings-modal" class="modal-overlay hidden">
+      <div class="modal-box settings-box">
+        <h3 class="settings-title">Settings</h3>
+        <p class="settings-subtitle">Appearance</p>
+        <div class="theme-toggle" role="group" aria-label="Theme">
+          <button type="button" class="theme-option" data-theme-set="dark">Dark</button>
+          <button type="button" class="theme-option" data-theme-set="light">Light</button>
+        </div>
+        <p class="settings-subtitle">Maintenance</p>
+        <button id="clear-db-btn" class="clear-btn settings-action">Clear database</button>
+        <p class="settings-hint">Deletes corrections, debates, messages, expressions and logs. Keeps patterns.</p>
+        <button id="settings-close" class="btn-ghost settings-action">Close</button>
+      </div>
+    </div>
+
+    <script is:inline>
+      (function () {
+        var gear = document.getElementById('settings-btn');
+        var sModal = document.getElementById('settings-modal');
+        var sClose = document.getElementById('settings-close');
+        var clearBtn = document.getElementById('clear-db-btn');
+        gear?.addEventListener('click', function () { sModal?.classList.remove('hidden'); });
+        sClose?.addEventListener('click', function () { sModal?.classList.add('hidden'); });
+        sModal?.addEventListener('click', function (e) { if (e.target === sModal) sModal.classList.add('hidden'); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') sModal?.classList.add('hidden'); });
+        clearBtn?.addEventListener('click', async function () {
+          if (!confirm('Clear database? Corrections, debates, messages, expressions and logs will be deleted. This cannot be undone.')) return;
+          clearBtn.disabled = true;
+          var original = clearBtn.textContent;
+          clearBtn.textContent = 'Clearing...';
+          try {
+            var res = await fetch('/api/clear-all', { method: 'POST' });
+            var data = await res.json();
+            if (data.error) alert(data.error);
+            else location.reload();
+          } catch (err) {
+            alert('Error clearing');
+          } finally {
+            clearBtn.disabled = false;
+            clearBtn.textContent = original;
+            sModal?.classList.add('hidden');
+          }
+        });
+      })();
+    </script>
+
+    <script is:inline>
+      (function () {
+        var scroller = document.getElementById('verb-scroller');
+        var current = document.getElementById('verb-current');
+        if (!scroller || !current) return;
+
+        var prevEntry = '';
+        var count = 0;
+        var charIndex = 0;
+
+        function addChars(parent, text) {
+          for (var i = 0; i < text.length; i++) {
+            var c = document.createElement('span');
+            c.className = 'verb-char';
+            c.textContent = text.charAt(i);
+            c.style.setProperty('--i', charIndex++);
+            parent.appendChild(c);
+          }
+        }
+
+        function buildItem(entry) {
+          var item = document.createElement('span');
+          item.className = 'verb-item enter';
+          charIndex = 0;
+          var groups = entry.split('|');
+          for (var g = 0; g < groups.length; g++) {
+            if (g > 0) {
+              var sep = document.createElement('span');
+              sep.className = 'verb-sep';
+              sep.textContent = '|';
+              item.appendChild(sep);
+            }
+            var halves = groups[g].split('—');
+            var english = (halves[0] || '').trim();
+            var spanish = halves.slice(1).join('—').trim();
+
+            var word = document.createElement('span');
+            word.className = 'verb-word';
+            addChars(word, english);
+            item.appendChild(word);
+
+            if (spanish) {
+              var dash = document.createElement('span');
+              dash.className = 'verb-dash';
+              dash.textContent = '—';
+              item.appendChild(dash);
+
+              var es = document.createElement('span');
+              es.className = 'verb-es';
+              addChars(es, spanish);
+              item.appendChild(es);
+            }
+          }
+          return item;
+        }
+
+        async function refresh() {
+          try {
+            var params = new URLSearchParams();
+            params.set('n', String(++count));
+            if (prevEntry) params.set('prev', prevEntry);
+            var res = await fetch('/api/verb?' + params.toString());
+            var data = await res.json();
+            if (!data || !data.entry || data.entry === prevEntry) return;
+            var entry = data.entry;
+
+            var next = buildItem(entry);
+            scroller.appendChild(next);
+
+            void next.offsetWidth;
+            next.classList.remove('enter');
+            current.classList.add('leave');
+
+            setTimeout(function () {
+              if (current && current.parentNode) current.parentNode.removeChild(current);
+              next.id = 'verb-current';
+              next.classList.remove('leave');
+              current = next;
+            }, 600);
+
+            prevEntry = entry;
+          } catch (err) {}
+        }
+
+        refresh();
+        setInterval(refresh, 60000);
+      })();
+    </script>
   </body>
 </html>

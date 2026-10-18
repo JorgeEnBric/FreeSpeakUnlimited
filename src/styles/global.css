@@ -199,7 +199,8 @@ h4 {
 .app-header-inner {
   display: flex;
   align-items: center;
-  gap: 0.6rem;
+  justify-content: space-between;
+  gap: 0.75rem;
   width: 100%;
   max-width: 1420px;
   margin: 0 auto;
@@ -210,6 +211,7 @@ h4 {
   display: inline-flex;
   align-items: center;
   gap: 0.55rem;
+  flex-shrink: 0;
   font-size: 1.1rem;
   font-weight: 700;
   letter-spacing: -0.02em;
@@ -224,6 +226,99 @@ h4 {
   border-radius: 50%;
   background: var(--accent);
   box-shadow: 0 0 0 4px var(--accent-soft);
+}
+
+/* ---------- Verb rotator (header) ---------- */
+.verb-scroller {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  height: 1.6rem;
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  text-align: center;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+  mask-image: linear-gradient(90deg, transparent, #000 8%, #000 92%, transparent);
+}
+
+.verb-item {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  transition: transform 0.55s cubic-bezier(0.22, 0.61, 0.36, 1), opacity 0.55s ease;
+}
+
+.verb-item.enter {
+  transform: translateY(100%);
+  opacity: 0;
+}
+
+.verb-item.leave {
+  transform: translateY(-100%);
+  opacity: 0;
+}
+
+.verb-char {
+  display: inline-block;
+  white-space: pre;
+  opacity: 0;
+  transform: translateY(0.35em);
+  animation: verbCharIn 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) forwards;
+  animation-delay: calc(var(--i, 0) * 16ms);
+}
+
+.verb-word .verb-char {
+  animation: verbCharIn 0.5s cubic-bezier(0.22, 0.61, 0.36, 1) forwards,
+    verbShine 0.9s ease-out forwards;
+  animation-delay: calc(var(--i, 0) * 16ms),
+    calc(var(--i, 0) * 16ms + 220ms);
+}
+
+.verb-word {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.verb-es {
+  color: var(--text-muted);
+}
+
+.verb-sep {
+  color: var(--text-muted);
+  opacity: 0.55;
+  padding: 0 0.55rem;
+}
+
+.verb-dash {
+  color: var(--text-muted);
+  opacity: 0.65;
+  padding: 0 0.4rem;
+}
+
+@keyframes verbCharIn {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes verbShine {
+  0% {
+    text-shadow: 0 0 0 transparent;
+  }
+  45% {
+    text-shadow: 0 0 12px var(--accent-glow), 0 0 4px var(--accent-glow);
+  }
+  100% {
+    text-shadow: 0 0 0 transparent;
+  }
 }
 
 /* ---------- App shell ---------- */
@@ -335,16 +430,14 @@ h4 {
 
 /* ---------- Gear button ---------- */
 .gear-btn {
-  position: absolute;
-  top: 0.75rem;
-  left: 1rem;
+  flex-shrink: 0;
   width: 36px;
   height: 36px;
   display: grid;
   place-items: center;
   border: 1px solid var(--border-muted);
   border-radius: var(--radius-sm);
-  background: var(--surface-1);
+  background: var(--surface-2);
   color: var(--text-muted);
   cursor: pointer;
   transition: background 0.15s, color 0.15s, border-color 0.15s;

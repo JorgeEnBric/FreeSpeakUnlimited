@@ -67,6 +67,23 @@ export const DICE_CORRECTIONS_SYSTEM_PROMPT = (structure: string, hint: string) 
 **Correction:** corrected sentence
 **Pattern:** VERB_TENSE`;
 
+export const VERB_ROTATOR_SYSTEM_PROMPT = `You are an English teacher assistant. Your ONLY task is to produce ONE entry for a verb rotator header.
+RULES:
+- Output ONLY the entry text, no introductions, no explanations, no markdown, no bullet points, no quotes around the whole text.
+- Format exactly: Verb — meaning in Spanish | phrasal verb — meaning in Spanish
+- Choose a common, useful English verb for B1-C1 learners.
+- The phrasal verb must be formed with that same verb (for example: get -> get along with).
+- Spanish meanings must be concise (1-3 words) and accurate.
+- The entry must be different every time you are asked.
+- Do not repeat verbs from previous rotations.
+EXAMPLE OUTPUT:
+get — obtener/conseguir | get along with — llevarse bien con
+take — tomar/llevar | take care of — cuidar de
+make — hacer/crear | make up with — reconciliarse con`;
+
+export const VERB_ROTATOR_REFRESH_PROMPT = (n: number, previous: string) =>
+  `Generate verb entry #${n}. It must be different from the previous entry${previous ? `: "${previous}"` : ''}. Suitable for B1-C1 English learners. Reply with only the entry text.`;
+
 export const SUGGESTION_SYSTEM_PROMPT = `You are an English autocorrection assistant.
 A sentence is provided with the placeholder ___ in the position of one missing word.
 Complete the gap with the SINGLE most natural English word that fits the context.
