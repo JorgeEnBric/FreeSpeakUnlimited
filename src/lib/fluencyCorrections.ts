@@ -2,7 +2,8 @@ import { existsSync, readFileSync, unlinkSync } from 'fs';
 import { join } from 'path';
 import { isRunning, ensureStarted, complete } from './llamaServer';
 import { findLlamaCli, getLlamaBinDir, getGemmaModelPath } from './modelConfig';
-import { PATTERN_LIST, CORRECTIONS_SYSTEM_PROMPT } from './prompts';
+import { PATTERN_LIST, CORRECTIONS_SYSTEM_PROMPT, DICE_CORRECTIONS_SYSTEM_PROMPT } from './prompts';
+import { getStructureByCode } from './dice';
 
 const TEMP_DIR = join(process.cwd(), 'temp');
 
@@ -74,8 +75,13 @@ async function analyzeDebateMessage(debateId: number): Promise<void> {
     }
 
     const sentences = subSentences.map(s => `"${s.trim()}"`).join('\n');
-    const systemPrompt = CORRECTIONS_SYSTEM_PROMPT;
-    const userPrompt = `Review each sentence and find ALL grammar mistakes. Fix them to produce natural, idiomatic English. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Correction:** complete corrected sentence\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
+    const structure = debate.structure ? getStructureByCode(debate.structure) : null;
+    const systemPrompt = structure
+      ? DICE_CORRECTIONS_SYSTEM_PROMPT(structure.label, structure.hint)
+      : CORRECTIONS_SYSTEM_PROMPT;
+    const userPrompt = structure
+      ? `Review each sentence ONLY for correct use of ${structure.label}. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Correction:** complete corrected sentence\n**Pattern:** VERB_TENSE\n\nSentences to review:\n${sentences}`
+      : `Review each sentence and find ALL grammar mistakes. Fix them to produce natural, idiomatic English. Use EXACTLY this format (no extra labels, no bold markers in values):\n**Correction:** complete corrected sentence\n**Pattern:** PATTERN_CODE\n\nUse only these Pattern codes: ${PATTERN_LIST.join(', ')}\n\nSentences to review:\n${sentences}`;
 
     let raw = '';
     await ensureStarted();

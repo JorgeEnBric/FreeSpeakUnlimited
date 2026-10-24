@@ -94,6 +94,13 @@ export async function initDB(): Promise<void> {
     analyzed INTEGER DEFAULT 0,
     created_at TEXT DEFAULT (datetime('now'))
   )`);
+  // Migración: añadir structure (código de tiempo verbal del dado) si no existe
+  try {
+    const dcols = d.exec(`PRAGMA table_info(debates)`);
+    if (dcols.length && !dcols[0].values.some((r: any) => r[1] === 'structure')) {
+      d.run(`ALTER TABLE debates ADD COLUMN structure TEXT`);
+    }
+  } catch { /* ya existe */ }
   d.run(`CREATE TABLE IF NOT EXISTS debate_corrections (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     debate_id INTEGER NOT NULL,
@@ -254,20 +261,20 @@ export async function clearAll(): Promise<void> {
   save();
 }
 
-export async function insertDebate(topic: string, text: string, durationMs: number): Promise<number> {
+export async function insertDebate(topic: string, text: string, durationMs: number, structure?: string | null): Promise<number> {
   const d = await getDb();
-  d.run('INSERT INTO debates (topic, text, duration_ms, analyzed) VALUES (?, ?, ?, 0)', [topic, text, durationMs]);
+  d.run('INSERT INTO debates (topic, text, duration_ms, analyzed, structure) VALUES (?, ?, ?, 0, ?)', [topic, text, durationMs, structure ?? null]);
   const id = (d.exec('SELECT last_insert_rowid()')[0].values[0][0]) as number;
   save();
   return id;
 }
 
-export async function getDebateById(id: number): Promise<{ id: number; topic: string; text: string; duration_ms: number } | null> {
+export async function getDebateById(id: number): Promise<{ id: number; topic: string; text: string; duration_ms: number; structure: string | null } | null> {
   const d = await getDb();
-  const rows = d.exec('SELECT id, topic, text, duration_ms FROM debates WHERE id = ?', [id]);
+  const rows = d.exec('SELECT id, topic, text, duration_ms, structure FROM debates WHERE id = ?', [id]);
   if (!rows.length || !rows[0].values.length) return null;
   const r = rows[0].values[0] as any[];
-  return { id: r[0] as number, topic: r[1] as string, text: r[2] as string, duration_ms: r[3] as number };
+  return { id: r[0] as number, topic: r[1] as string, text: r[2] as string, duration_ms: r[3] as number, structure: (r[4] as string) ?? null };
 }
 
 export async function insertDebateCorrection(

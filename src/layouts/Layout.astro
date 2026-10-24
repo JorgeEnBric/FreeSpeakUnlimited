@@ -1,4 +1,13 @@
 ---
+import '@fontsource/inter/400.css';
+import '@fontsource/inter/500.css';
+import '@fontsource/inter/600.css';
+import '@fontsource/inter/700.css';
+import '@fontsource/ibm-plex-mono/400.css';
+import '@fontsource/ibm-plex-mono/500.css';
+import '@fontsource/ibm-plex-mono/600.css';
+import '../styles/global.css';
+
 interface Props {
   title: string;
 }
@@ -14,39 +23,187 @@ const { title } = Astro.props;
     <meta name="description" content="Practice speaking English without limits" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <title>{title}</title>
+    <script is:inline>
+      (function () {
+        try {
+          var t = localStorage.getItem('theme');
+          if (t !== 'light' && t !== 'dark') {
+            t = 'light';
+          }
+          document.documentElement.dataset.theme = t;
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light';
+        }
+      })();
+      document.addEventListener('click', function (e) {
+        var el = e.target;
+        var btn = el && el.closest ? el.closest('[data-theme-set]') : null;
+        if (!btn) return;
+        var t = btn.getAttribute('data-theme-set') === 'light' ? 'light' : 'dark';
+        document.documentElement.dataset.theme = t;
+        try { localStorage.setItem('theme', t); } catch (err) {}
+      });
+    </script>
   </head>
   <body>
+    <header class="app-header">
+      <div class="app-header-inner">
+        <div class="brand-wrap">
+          <svg class="brand-icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path class="shield" d="M12 2 4 5.5v5.5c0 4.7 3.4 8.8 8 10.5 4.6-1.7 8-5.8 8-10.5V5.5L12 2z" />
+            <g fill="#ffffff" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="10" y="6.2" width="4" height="7.2" rx="2" stroke="none" />
+              <path d="M8.6 11.4a3.4 3.4 0 0 0 6.8 0" fill="none" />
+              <path d="M12 14.8v2.4" fill="none" />
+              <path d="M9.6 17.4h4.8" fill="none" />
+            </g>
+          </svg>
+          <h1 class="app-brand">FreeSpeak Unlimited</h1>
+        </div>
+        <div class="verb-scroller" id="verb-scroller" aria-live="polite">
+          <span class="verb-item" id="verb-current">verbs &amp; phrasal verbs loading…</span>
+        </div>
+        <button id="settings-btn" class="gear-btn" aria-label="Settings">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.72l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+        </button>
+      </div>
+    </header>
+
     <slot />
+
+    <div id="settings-modal" class="modal-overlay hidden">
+      <div class="modal-box settings-box">
+        <h3 class="settings-title">Settings</h3>
+        <p class="settings-subtitle">Appearance</p>
+        <div class="theme-toggle" role="group" aria-label="Theme">
+          <button type="button" class="theme-option" data-theme-set="dark">Dark</button>
+          <button type="button" class="theme-option" data-theme-set="light">Light</button>
+        </div>
+        <p class="settings-subtitle">Maintenance</p>
+        <button id="clear-db-btn" class="clear-btn settings-action">Clear database</button>
+        <p class="settings-hint">Deletes corrections, debates, messages, expressions and logs. Keeps patterns.</p>
+        <button id="settings-close" class="btn-ghost settings-action">Close</button>
+      </div>
+    </div>
+
+    <script is:inline>
+      (function () {
+        var gear = document.getElementById('settings-btn');
+        var sModal = document.getElementById('settings-modal');
+        var sClose = document.getElementById('settings-close');
+        var clearBtn = document.getElementById('clear-db-btn');
+        gear?.addEventListener('click', function () { sModal?.classList.remove('hidden'); });
+        sClose?.addEventListener('click', function () { sModal?.classList.add('hidden'); });
+        sModal?.addEventListener('click', function (e) { if (e.target === sModal) sModal.classList.add('hidden'); });
+        document.addEventListener('keydown', function (e) { if (e.key === 'Escape') sModal?.classList.add('hidden'); });
+        clearBtn?.addEventListener('click', async function () {
+          if (!confirm('Clear database? Corrections, debates, messages, expressions and logs will be deleted. This cannot be undone.')) return;
+          clearBtn.disabled = true;
+          var original = clearBtn.textContent;
+          clearBtn.textContent = 'Clearing...';
+          try {
+            var res = await fetch('/api/clear-all', { method: 'POST' });
+            var data = await res.json();
+            if (data.error) alert(data.error);
+            else location.reload();
+          } catch (err) {
+            alert('Error clearing');
+          } finally {
+            clearBtn.disabled = false;
+            clearBtn.textContent = original;
+            sModal?.classList.add('hidden');
+          }
+        });
+      })();
+    </script>
+
+    <script is:inline>
+      (function () {
+        var scroller = document.getElementById('verb-scroller');
+        var current = document.getElementById('verb-current');
+        if (!scroller || !current) return;
+
+        var prevEntry = '';
+        var count = 0;
+        var charIndex = 0;
+
+        function addChars(parent, text) {
+          for (var i = 0; i < text.length; i++) {
+            var c = document.createElement('span');
+            c.className = 'verb-char';
+            c.textContent = text.charAt(i);
+            c.style.setProperty('--i', charIndex++);
+            parent.appendChild(c);
+          }
+        }
+
+        function buildItem(entry) {
+          var item = document.createElement('span');
+          item.className = 'verb-item enter';
+          charIndex = 0;
+          var groups = entry.split('|');
+          for (var g = 0; g < groups.length; g++) {
+            if (g > 0) {
+              var sep = document.createElement('span');
+              sep.className = 'verb-sep';
+              sep.textContent = '|';
+              item.appendChild(sep);
+            }
+            var halves = groups[g].split('—');
+            var english = (halves[0] || '').trim();
+            var spanish = halves.slice(1).join('—').trim();
+
+            var word = document.createElement('span');
+            word.className = 'verb-word';
+            addChars(word, english);
+            item.appendChild(word);
+
+            if (spanish) {
+              var dash = document.createElement('span');
+              dash.className = 'verb-dash';
+              dash.textContent = '—';
+              item.appendChild(dash);
+
+              var es = document.createElement('span');
+              es.className = 'verb-es';
+              addChars(es, spanish);
+              item.appendChild(es);
+            }
+          }
+          return item;
+        }
+
+        async function refresh() {
+          try {
+            var params = new URLSearchParams();
+            params.set('n', String(++count));
+            if (prevEntry) params.set('prev', prevEntry);
+            var res = await fetch('/api/verb?' + params.toString());
+            var data = await res.json();
+            if (!data || !data.entry || data.entry === prevEntry) return;
+            var entry = data.entry;
+
+            var next = buildItem(entry);
+            scroller.appendChild(next);
+
+            void next.offsetWidth;
+            next.classList.remove('enter');
+            current.classList.add('leave');
+
+            setTimeout(function () {
+              if (current && current.parentNode) current.parentNode.removeChild(current);
+              next.id = 'verb-current';
+              next.classList.remove('leave');
+              current = next;
+            }, 600);
+
+            prevEntry = entry;
+          } catch (err) {}
+        }
+
+        refresh();
+        setInterval(refresh, 60000);
+      })();
+    </script>
   </body>
 </html>
-
-<style is:global>
-  * {
-    margin: 0;
-    padding: 0;
-    box-sizing: border-box;
-  }
-
-  :root {
-    --primary: #3b82f6;
-    --primary-hover: #2563eb;
-    --background: #0f172a;
-    --surface: #1e293b;
-    --surface-light: #334155;
-    --text: #f1f5f9;
-    --text-muted: #94a3b8;
-    --success: #22c55e;
-    --error: #ef4444;
-    --recording: #dc2626;
-    --border-radius: 12px;
-  }
-
-  body {
-    font-family: system-ui, -apple-system, sans-serif;
-    background: var(--background);
-    color: var(--text);
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-</style>

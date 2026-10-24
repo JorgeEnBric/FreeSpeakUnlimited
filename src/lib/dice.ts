@@ -128,6 +128,21 @@ export const DICE_STRUCTURES: DiceStructure[] = [
   },
 ];
 
+export const DICE_FALLBACK_ANSWERS: Record<string, string[]> = {
+  present_simple: ['On weekends I usually relax at home and meet my friends.', 'I normally wake up early and go for a short run.'],
+  present_continuous: ['Right now I am answering your question and thinking about my day.', 'At the moment I am sitting at my desk with a cup of coffee.'],
+  past_simple: ['Yesterday I went to the park and met an old friend.', 'Last weekend I stayed home and watched a good film.'],
+  past_continuous: ['At eight o’clock last night I was cooking dinner.', 'I was walking home when I heard the news.'],
+  present_perfect: ['I have travelled to several countries in Europe.', 'I have never tried sushi, but I would love to.'],
+  present_perfect_continuous: ['I have been learning English for about three years.', 'Lately I have been working on a new project at home.'],
+  future_will: ['I think I will visit my family next weekend.', 'I will probably stay home tomorrow if it rains.'],
+  future_going_to: ['After this lesson I am going to cook something nice.', 'I am going to travel to the coast next month.'],
+  passive_voice: ['Coffee is made from roasted beans.', 'My city was founded more than two hundred years ago.'],
+  comparative_superlative: ['The best city I have visited is Lisbon.', 'I think it is better to live in the countryside.'],
+  direct_questions: ['I grew up in a small town near the mountains.', 'I like rock music and a bit of jazz.'],
+  indirect_questions: ['I am from a small town near the coast.', 'I think it is about half past nine.'],
+};
+
 export function getStructureByCode(code: string | null | undefined): DiceStructure | null {
   if (!code) return null;
   return DICE_STRUCTURES.find((s) => s.code === code) ?? null;
@@ -140,6 +155,11 @@ export function pickRandomStructure(): DiceStructure {
 export function pickFallbackQuestion(structure: DiceStructure): string {
   const list = structure.examples;
   return list[Math.floor(Math.random() * list.length)];
+}
+
+export function pickFallbackAnswers(structure: DiceStructure, count = 2): string[] {
+  const list = DICE_FALLBACK_ANSWERS[structure.code] ?? [];
+  return list.slice(0, count);
 }
 
 export function sanitizeQuestion(raw: string): string {
