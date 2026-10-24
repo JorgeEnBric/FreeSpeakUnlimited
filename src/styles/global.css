@@ -25,6 +25,9 @@
   --accent-glow: rgba(79, 70, 229, 0.25);
   --on-accent: #ffffff;
   --accent-2: #7c3aed;
+  --brand-orange: #f59e0b;
+  --brand-orange-2: #f97316;
+  --brand-purple: #b39ddb;
 
   --success: #16a34a;
   --success-fg: #15803d;
@@ -82,6 +85,9 @@ html[data-theme='dark'] {
   --accent-soft-hover: rgba(99, 102, 241, 0.22);
   --accent-glow: rgba(99, 102, 241, 0.35);
   --accent-2: #8b5cf6;
+  --brand-orange: #fb923c;
+  --brand-orange-2: #fdba74;
+  --brand-purple: #cbb8e6;
 
   --success: #22c55e;
   --success-fg: #4ade80;
@@ -219,13 +225,27 @@ h4 {
   margin: 0;
 }
 
-.app-brand::before {
-  content: '';
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: var(--accent);
-  box-shadow: 0 0 0 4px var(--accent-soft);
+.brand-wrap {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.2rem;
+  border-radius: 999px;
+  background: var(--surface-1);
+}
+
+.brand-icon {
+  display: block;
+  width: 36px;
+  height: 36px;
+  flex-shrink: 0;
+}
+
+.brand-icon .shield {
+  fill: var(--brand-purple);
+  stroke: var(--brand-purple);
+  stroke-width: 1.4;
+  stroke-linejoin: round;
 }
 
 /* ---------- Verb rotator (header) ---------- */
