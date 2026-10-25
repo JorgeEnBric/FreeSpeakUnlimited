@@ -1,0 +1,37 @@
+---
+import { getHWIDExport } from '../lib/license-client';
+const hwid = getHWIDExport();
+---
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Licencia no activa</title>
+  <style>
+    body { font-family: system-ui, sans-serif; background: #f4f6fb; color: #0f172a; display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+    .box { background: #fff; border-radius: 16px; padding: 2rem; max-width: 480px; text-align: center; box-shadow: 0 8px 24px rgba(0,0,0,0.08); }
+    h1 { color: #dc2626; margin: 0 0 1rem; }
+    p { color: #475569; line-height: 1.5; }
+    code { display: block; background: #f1f5f9; padding: 0.75rem; border-radius: 8px; font-family: monospace; word-break: break-all; margin: 1rem 0; font-size: 0.85rem; }
+    button { background: #4f46e5; color: #fff; border: none; padding: 0.5rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
+    button:hover { background: #4338ca; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h1>Licencia no activa</h1>
+    <p>Tu licencia no está activa o ha expirado. Envía el siguiente código al administrador para activarla.</p>
+    <code id="hwid">{hwid}</code>
+    <button id="copy">Copiar HWID</button>
+  </div>
+  <script>
+    document.getElementById('copy')?.addEventListener('click', () => {
+      const hwid = document.getElementById('hwid')?.textContent ?? '';
+      navigator.clipboard.writeText(hwid);
+      const btn = document.getElementById('copy');
+      if (btn) btn.textContent = '¡Copiado!';
+    });
+  </script>
+</body>
+</html>

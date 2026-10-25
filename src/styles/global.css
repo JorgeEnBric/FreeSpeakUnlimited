@@ -1009,8 +1009,22 @@ h4 {
   line-height: 1.4;
 }
 
-.settings-action {
-  width: 100%;
+.settings-license {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.5rem 0;
+}
+
+.settings-hwid {
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  background: var(--surface-3);
+  padding: 0.4rem 0.6rem;
+  border-radius: var(--radius-sm);
+  word-break: break-all;
+  color: var(--text-secondary);
 }
 
 /* ---------- Theme toggle ---------- */
