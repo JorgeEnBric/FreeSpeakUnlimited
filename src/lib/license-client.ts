@@ -7,7 +7,7 @@ import {
   marcarInicializado,
 } from './license-store';
 
-const BACKEND = process.env.BACKEND_URL || 'http://localhost:3333';
+const BACKEND = process.env.BACKEND_URL || 'https://backendfreespeek.vercel.app';
 
 let intervaloActivo = false;
 
