@@ -146,7 +146,11 @@ export async function transcribeAudio(audioPath: string): Promise<{ text: string
   return runWhisper(audioPath, modelPath);
 }
 
-export async function generateResponse(prompt: string): Promise<string> {
+export async function generateResponse(
+  prompt: string,
+  systemPrompt: string = SYSTEM_PROMPT,
+  options?: { n_predict?: number; temperature?: number; repeat_penalty?: number }
+): Promise<string> {
   const modelPath = getGemmaModelPath();
   const status = checkModels();
   if (!status.gemma) {
@@ -161,7 +165,11 @@ export async function generateResponse(prompt: string): Promise<string> {
     const { ensureStarted, isRunning, complete } = await import('./llamaServer');
     await ensureStarted();
     if (isRunning()) {
-      const result = await complete(prompt, SYSTEM_PROMPT, { n_predict: 70, temperature: 0.7 });
+      const result = await complete(prompt, systemPrompt, {
+        n_predict: options?.n_predict ?? 70,
+        temperature: options?.temperature ?? 0.7,
+        repeat_penalty: options?.repeat_penalty,
+      });
       if (result) return truncate(result);
     }
 
@@ -177,12 +185,12 @@ export async function generateResponse(prompt: string): Promise<string> {
 
     execFileSync(findLlamaCli(), [
       '-m', modelPath,
-      '-sys', SYSTEM_PROMPT,
+      '-sys', systemPrompt,
       '-p', prompt,
       '-o', outFile,
-      '-n', '70',
-      '--temp', '0.7',
-      '--repeat-penalty', '1.0',
+      '-n', String(options?.n_predict ?? 70),
+      '--temp', String(options?.temperature ?? 0.7),
+      '--repeat-penalty', String(options?.repeat_penalty ?? 1.0),
       '--single-turn',
       '--simple-io',
     ], {
@@ -289,7 +297,9 @@ export async function suggestWord(sentence: string): Promise<string | null> {
 // Streaming version: yields response text chunks as they are generated.
 // Falls back to generateResponse() when llama-server is unavailable.
 export async function* generateResponseStream(
-  prompt: string
+  prompt: string,
+  systemPrompt: string = SYSTEM_PROMPT,
+  options?: { n_predict?: number; temperature?: number; repeat_penalty?: number }
 ): AsyncGenerator<string, void, unknown> {
   const status = checkModels();
 
@@ -303,9 +313,10 @@ export async function* generateResponseStream(
     await ensureStarted();
     if (isRunning()) {
       let hadChunks = false;
-      for await (const chunk of completeStream(prompt, SYSTEM_PROMPT, {
-        n_predict: 70,
-        temperature: 0.7,
+      for await (const chunk of completeStream(prompt, systemPrompt, {
+        n_predict: options?.n_predict ?? 70,
+        temperature: options?.temperature ?? 0.7,
+        repeat_penalty: options?.repeat_penalty ?? 1.0,
       })) {
         hadChunks = true;
         yield chunk;
@@ -314,7 +325,7 @@ export async function* generateResponseStream(
     }
 
     // Fallback: non-streaming path
-    const full = await generateResponse(prompt);
+    const full = await generateResponse(prompt, systemPrompt, options);
     yield full;
   } catch (error) {
     console.error('Gemma stream error:', error);

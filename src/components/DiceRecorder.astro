@@ -14,7 +14,7 @@
     </svg>
   </button>
   <div class="recorder-actions">
-    <p id="dice-status" class="status"><span id="dice-timer" class="dice-timer"></span>Roll the die and answer by voice</p>
+    <p id="dice-status" class="status">Roll the die and answer by voice</p>
     <button id="dice-pause-btn" class="pause-button hidden" aria-label="Pause recording">Pause</button>
     <button id="dice-cancel-btn" class="cancel-button hidden" aria-label="Cancel recording">Cancel</button>
   </div>
@@ -38,6 +38,8 @@
 </div>
 
 <script>
+  import { createPhaseController } from '../lib/statusPhase';
+
   let mediaRecorder = null;
   let mediaStream = null;
   let audioChunks = [];
@@ -61,8 +63,14 @@
   const micIcon = document.getElementById('dice-mic-icon');
   const stopIcon = document.getElementById('dice-stop-icon');
   const status = document.getElementById('dice-status');
-  const timerEl = document.getElementById('dice-timer');
   const chatDisplay = document.getElementById('dice-chat');
+
+  const phase = createPhaseController(() => status, 'Roll the die and answer by voice', () => isRecording);
+
+  window.addEventListener('analysis-phase', (event) => {
+    const detail = (event as CustomEvent).detail;
+    if (detail) phase.handlePoll(detail);
+  });
 
   function getCurrentContext() {
     const el = document.getElementById('dice-current');
@@ -100,15 +108,9 @@
     if (!isRecording || isPaused) return;
     const elapsed = pausedAccum + (Date.now() - recordingStart);
     recordingDurationMs = elapsed;
-    if (timerEl) {
-      timerEl.textContent = formatTimer(elapsed);
-      timerEl.classList.remove('valid', 'over');
-      if (elapsed < 120000) timerEl.classList.add('valid');
-      else timerEl.classList.add('over');
-    }
+    const cls = elapsed < 120000 ? 'valid' : 'over';
     if (status) {
-      const base = isPaused ? 'Paused' : 'Recording';
-      status.innerHTML = `<span id="dice-timer" class="dice-timer ${timerEl ? timerEl.className : ''}">${formatTimer(elapsed)}</span> ${base} (${Math.floor(elapsed / 1000)}s / 120s)`;
+      status.innerHTML = `<span id="dice-timer" class="dice-timer ${cls}">${formatTimer(elapsed)}</span> Recording (${Math.floor(elapsed / 1000)}s / 120s)`;
     }
     if (elapsed >= 120000) stopRecording();
   }
@@ -136,8 +138,7 @@
           isPaused = false;
           pausedAccum = 0;
           recordingDurationMs = 0;
-          if (timerEl) { timerEl.textContent = '00:00'; timerEl.className = 'dice-timer'; }
-          if (status) status.innerHTML = '<span id="dice-timer" class="dice-timer">00:00</span> Recording cancelled';
+          if (status) status.textContent = 'Recording cancelled';
           updateUI();
           return;
         }
@@ -199,6 +200,7 @@
     if (mediaRecorder && isRecording) {
       isCancelled = true;
       if (recordingTimer) { clearInterval(recordingTimer); recordingTimer = null; }
+      phase.reset();
       mediaRecorder.stop();
       isRecording = false;
       isPaused = false;
@@ -532,22 +534,10 @@
   }
 
   async function processAudio(audioBlob, durationMs) {
-    const startTime = Date.now();
-    let timerEl2 = null;
-    function updateTimer() {
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
-      const s = String(elapsed % 60).padStart(2, '0');
-      if (timerEl2) timerEl2.textContent = `${m}:${s}`;
-    }
-    const timerInterval = setInterval(updateTimer, 1000);
+    phase.reset();
     function setStatusLabel(label) {
-      if (!status) return;
-      status.innerHTML = '<span class="timer" id="dice-process-timer">00:00</span> ' + label;
-      timerEl2 = document.getElementById('dice-process-timer');
-      updateTimer();
+      if (status) status.textContent = label;
     }
-    function clearTimer() { clearInterval(timerInterval); }
 
     setStatusLabel('Listening to your audio');
     const formData = new FormData();
@@ -556,15 +546,15 @@
     try {
       const response = await fetch('/api/process-audio', { method: 'POST', body: formData });
       const data = await response.json();
-      if (data.error) { if (status) status.textContent = data.error; clearTimer(); return; }
-      if (!data.transcription) { if (status) status.textContent = 'No transcription. Try again.'; clearTimer(); return; }
+      if (data.error) { if (status) status.textContent = data.error; return; }
+      if (!data.transcription) { if (status) status.textContent = 'No transcription. Try again.'; return; }
 
       setStatusLabel('Review your transcript');
       const finalText = await askTranscription(data.transcription, data.uncertainWords, audioBlob);
-      if (finalText === null) { if (status) status.textContent = 'Message discarded'; clearTimer(); return; }
+      if (finalText === null) { if (status) status.textContent = 'Message discarded'; return; }
 
       const context = getCurrentContext();
-      if (!context) { if (status) status.textContent = 'Roll the die first.'; clearTimer(); return; }
+      if (!context) { if (status) status.textContent = 'Roll the die first.'; return; }
 
       addMessage('user', finalText);
       diceHistory.push({ role: 'user', content: finalText });
@@ -579,7 +569,6 @@
         let errMsg = `Error ${res.status}`;
         try { const errData = await res.json(); if (errData.error) errMsg = errData.error; } catch { /* ignore */ }
         if (status) status.textContent = errMsg;
-        clearTimer();
         return;
       }
       const result = await res.json();
@@ -601,7 +590,6 @@
         });
         if (!contRes.body) {
           if (status) status.textContent = 'No reply received.';
-          clearTimer();
           return;
         }
         const msgEl = addMessage('assistant', '', true);
@@ -642,12 +630,10 @@
         }
       }
 
-      if (status) status.innerHTML = `<span id="dice-timer" class="dice-timer valid">${formatTimer(durationMs)}</span> Answer sent - corrections on the way`;
-      clearTimer();
+      phase.start();
     } catch (error) {
       console.error('Error processing audio:', error);
       if (status) status.textContent = 'Error processing audio. Try again.';
-      clearTimer();
     }
   }
 
@@ -666,17 +652,18 @@
   window.addEventListener('dice-rolled', () => {
     diceHistory = [];
     stopAudioPlayback();
+    phase.reset();
   });
 </script>
 
 
 <style>
   .recorder-container { display: flex; flex-direction: column; align-items: center; gap: 0.75rem; }
-  .record-button { width: 72px; height: 72px; border-radius: 50%; border: none; background: var(--accent); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 4px 20px var(--accent-glow); }
+  .record-button { width: 4.5rem; height: 4.5rem; border-radius: 50%; border: none; background: var(--accent); color: #fff; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.2s ease, transform 0.2s ease, box-shadow 0.2s ease; box-shadow: 0 4px 20px var(--accent-glow); }
   .record-button:hover { background: var(--accent-hover); transform: scale(1.05); }
   .record-button.recording { background: var(--recording); animation: pulse 1.5s infinite; box-shadow: 0 4px 20px var(--danger-glow); }
   .record-button.paused { background: var(--warning); animation: none; box-shadow: 0 4px 20px var(--warning-soft); }
-  .mic-icon, .stop-icon { width: 32px; height: 32px; }
+  .mic-icon, .stop-icon { width: 2rem; height: 2rem; }
   .hidden { display: none; }
   .status { color: var(--text-muted); font-size: 0.875rem; text-align: center; width: 100%; display: block; margin: 0 auto; }
   .recorder-actions { display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }

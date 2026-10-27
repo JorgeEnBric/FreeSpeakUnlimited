@@ -13,6 +13,7 @@ interface Props {
 }
 
 const { title } = Astro.props;
+const hwid = (await import('../lib/license-client')).getHWIDExport();
 ---
 
 <!doctype html>
@@ -82,6 +83,16 @@ const { title } = Astro.props;
         <p class="settings-subtitle">Maintenance</p>
         <button id="clear-db-btn" class="clear-btn settings-action">Clear database</button>
         <p class="settings-hint">Deletes corrections, debates, messages, expressions and logs. Keeps patterns.</p>
+        <p class="settings-subtitle">License</p>
+        <div class="settings-license">
+          <code id="license-hwid" class="settings-hwid">{hwid}</code>
+          <button id="copy-hwid-btn" class="btn-ghost settings-action">Copy HWID</button>
+        </div>
+        <p class="settings-subtitle">Equipo de soporte</p>
+        <div class="support-block">
+          <p>Jorge Briceño — Ing. Software</p>
+          <p>WhatsApp: <a href="https://wa.me/573177552321" target="_blank" rel="noopener noreferrer">317 755 2321</a></p>
+        </div>
         <button id="settings-close" class="btn-ghost settings-action">Close</button>
       </div>
     </div>
@@ -92,10 +103,17 @@ const { title } = Astro.props;
         var sModal = document.getElementById('settings-modal');
         var sClose = document.getElementById('settings-close');
         var clearBtn = document.getElementById('clear-db-btn');
+        var copyHwidBtn = document.getElementById('copy-hwid-btn');
+        var hwidEl = document.getElementById('license-hwid');
         gear?.addEventListener('click', function () { sModal?.classList.remove('hidden'); });
         sClose?.addEventListener('click', function () { sModal?.classList.add('hidden'); });
         sModal?.addEventListener('click', function (e) { if (e.target === sModal) sModal.classList.add('hidden'); });
         document.addEventListener('keydown', function (e) { if (e.key === 'Escape') sModal?.classList.add('hidden'); });
+        copyHwidBtn?.addEventListener('click', function () {
+          navigator.clipboard.writeText(hwidEl?.textContent ?? '');
+          copyHwidBtn.textContent = 'Copied!';
+          setTimeout(function () { copyHwidBtn.textContent = 'Copy HWID'; }, 2000);
+        });
         clearBtn?.addEventListener('click', async function () {
           if (!confirm('Clear database? Corrections, debates, messages, expressions and logs will be deleted. This cannot be undone.')) return;
           clearBtn.disabled = true;

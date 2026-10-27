@@ -2,6 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import ChatDisplay from '../components/ChatDisplay.astro';
 import FluencyRecorder from '../components/FluencyRecorder.astro';
+import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.astro';
 ---
 
 <Layout title="Fluency Practice">
@@ -52,6 +53,8 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
           <p class="trace-empty">Speak to get automatic corrections</p>
         </div>
       </aside>
+
+      <PomodoroExpressionsPanel />
     </div>
   </main>
 
@@ -90,6 +93,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
 
   async function loadNewTopic() {
     if (!topicTextEl || !newTopicBtn) return;
+    window.dispatchEvent(new CustomEvent('fluency-topic-reset'));
     newTopicBtn.disabled = true;
     newTopicBtn.textContent = 'Generating...';
     topicTextEl.textContent = 'Generating topic...';
@@ -98,6 +102,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       const data = await res.json();
       if (data.topic) {
         topicTextEl.textContent = data.topic;
+        window.dispatchEvent(new CustomEvent('fluency-topic-ready'));
         // Limpiar chat por completo
         const chat = document.getElementById('fluency-chat');
         if (chat) chat.innerHTML = '';
@@ -267,6 +272,9 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       const res = await fetch(`/api/fluency-corrections-status?since=${lastDebateCorrectionId}&debateId=${currentDebateId}`);
       const data = await res.json();
       renderFluencyPanel(data);
+      window.dispatchEvent(new CustomEvent('analysis-phase', {
+        detail: { analyzing: !!data.analyzing, queueLength: data.queueLength ?? 0 },
+      }));
     } catch (e) { console.error('[pollFluency]', e); }
   }
 
@@ -344,6 +352,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       const res = await fetch('/api/expressions/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contextMenuItem) });
       const data = await res.json();
       if (data.error) alert(`Error: ${data.error}`);
+      else window.dispatchEvent(new CustomEvent('expressions-updated'));
     } catch (e) { console.error(e); }
   });
   document.getElementById('ctx-translate')?.addEventListener('click', async () => {

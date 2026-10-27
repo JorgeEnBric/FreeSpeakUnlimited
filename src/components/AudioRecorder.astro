@@ -37,6 +37,8 @@
 </div>
 
 <script>
+  import { createPhaseController } from '../lib/statusPhase';
+
   let mediaRecorder = null;
   let mediaStream = null;
   let audioChunks = [];
@@ -46,6 +48,8 @@
   let nextPlayTime = 0;
   let activeSources = [];
   let currentChatAbort = null;
+  let recordingStart = 0;
+  let recordingTimer: ReturnType<typeof setInterval> | null = null;
 
   const recordBtn = document.getElementById('record-btn');
   const cancelBtn = document.getElementById('cancel-btn');
@@ -53,6 +57,33 @@
   const stopIcon = document.getElementById('stop-icon');
   const status = document.getElementById('status');
   const chatDisplay = document.getElementById('chat');
+
+  const phase = createPhaseController(() => status, 'Click to start recording', () => isRecording);
+
+  function formatTimer(ms: number) {
+    const totalSec = Math.floor(ms / 1000);
+    const m = String(Math.floor(totalSec / 60)).padStart(2, '0');
+    const s = String(totalSec % 60).padStart(2, '0');
+    return `${m}:${s}`;
+  }
+
+  function updateRecordingTimer() {
+    if (!isRecording) return;
+    const chip = document.getElementById('chat-timer');
+    if (chip) chip.textContent = formatTimer(Date.now() - recordingStart);
+  }
+
+  function clearRecordingTimer() {
+    if (recordingTimer) {
+      clearInterval(recordingTimer);
+      recordingTimer = null;
+    }
+  }
+
+  window.addEventListener('analysis-phase', (event) => {
+    const detail = (event as CustomEvent).detail;
+    if (detail) phase.handlePoll(detail);
+  });
 
 
   function addMessage(type, text, empty = false) {
@@ -95,6 +126,7 @@
 
       mediaRecorder.onstop = async () => {
         if (mediaStream) mediaStream.getTracks().forEach(track => track.stop());
+        clearRecordingTimer();
         if (isCancelled) {
           isCancelled = false;
           return;
@@ -105,7 +137,10 @@
 
       mediaRecorder.start();
       isRecording = true;
-      if (status) status.textContent = 'Recording...';
+      phase.reset();
+      recordingStart = Date.now();
+      if (status) status.innerHTML = '<span class="timer valid" id="chat-timer">00:00</span> Recording...';
+      recordingTimer = setInterval(updateRecordingTimer, 200);
       updateUI();
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
@@ -116,6 +151,7 @@
 
   function stopRecording() {
     if (mediaRecorder && isRecording) {
+      clearRecordingTimer();
       mediaRecorder.stop();
       isRecording = false;
       updateUI();
@@ -125,6 +161,7 @@
   function cancelRecording() {
     if (mediaRecorder && isRecording) {
       isCancelled = true;
+      clearRecordingTimer();
       mediaRecorder.stop();
       isRecording = false;
       if (status) status.textContent = 'Recording cancelled';
@@ -479,22 +516,9 @@
 
   async function processAudio(audioBlob) {
     const startTime = Date.now();
-    let timerEl = null;
-    function updateTimer() {
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      const m = String(Math.floor(elapsed / 60)).padStart(2, '0');
-      const s = String(elapsed % 60).padStart(2, '0');
-      if (timerEl) timerEl.textContent = `${m}:${s}`;
-    }
-    const timerInterval = setInterval(updateTimer, 1000);
+    phase.reset();
     function setStatusLabel(label) {
-      if (!status) return;
-      status.innerHTML = '<span class="timer" id="process-timer">00:00</span> ' + label;
-      timerEl = document.getElementById('process-timer');
-      updateTimer();
-    }
-    function clearTimer() {
-      clearInterval(timerInterval);
+      if (status) status.textContent = label;
     }
 
     // Phase 1: Whisper transcription
@@ -512,12 +536,10 @@
 
       if (data.error) {
         if (status) status.textContent = data.error;
-        clearTimer();
         return;
       }
       if (!data.transcription) {
         if (status) status.textContent = 'No transcription. Try again.';
-        clearTimer();
         return;
       }
 
@@ -526,7 +548,6 @@
       const finalText = await askTranscription(data.transcription, data.uncertainWords, audioBlob);
       if (finalText === null) {
         if (status) status.textContent = 'Message discarded';
-        clearTimer();
         return;
       }
       addMessage('user', finalText);
@@ -545,7 +566,6 @@
 
         if (!chatRes.body) {
           if (status) status.textContent = 'No response received.';
-          clearTimer();
           return;
         }
 
@@ -578,20 +598,18 @@
         }
 
         currentChatAbort = null;
-        if (fullResponse && status) status.textContent = 'Click to start recording';
+        if (fullResponse) phase.start();
       } catch (error) {
         if (error && error.name === 'AbortError') {
-          if (status) status.textContent = 'Click to start recording';
+          if (status && !isRecording) status.textContent = 'Click to start recording';
         } else {
           console.error('Error generating response:', error);
           if (status) status.textContent = 'Error generating response.';
         }
       }
-      clearTimer();
     } catch (error) {
       console.error('Error processing audio:', error);
       if (status) status.textContent = 'Error processing audio. Try again.';
-      clearTimer();
     }
   }
 
@@ -686,7 +704,8 @@
         if (status) status.textContent = 'Speaking...';
         audioEl.onended = () => {
           btn.classList.remove('playing');
-          if (status) status.textContent = 'Click to start recording';
+          if (phase.isActive()) phase.refresh();
+          else if (status) status.textContent = 'Click to start recording';
         };
         return audioEl.play();
       })
@@ -715,8 +734,8 @@
   }
 
   .record-button {
-    width: 72px;
-    height: 72px;
+    width: 4.5rem;
+    height: 4.5rem;
     border-radius: 50%;
     border: none;
     background: var(--accent);
@@ -741,8 +760,8 @@
   }
 
   .mic-icon, .stop-icon {
-    width: 32px;
-    height: 32px;
+    width: 2rem;
+    height: 2rem;
   }
 
   .hidden {
