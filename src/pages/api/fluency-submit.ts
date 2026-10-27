@@ -1,5 +1,5 @@
 import type { APIRoute } from 'astro';
-import { FLUENCY_CONTINUE_PROMPT } from '../../lib/prompts';
+import { FLUENCY_CONTINUE_PROMPT, FLUENCY_CONTINUE_SYSTEM_PROMPT } from '../../lib/prompts';
 import { checkModels, generateResponseStream } from '../../lib/modelManager';
 import { ensurePiperStarted, isPiperRunning, writeSentence, onPiperAudio } from '../../lib/piperStream';
 import { splitSentences } from '../../lib/sentenceSplitter';
@@ -9,6 +9,29 @@ export const prerender = false;
 const DRAIN_SILENCE_MS = 2000;
 const NO_AUDIO_TIMEOUT_MS = 2500;
 const MAX_DRAIN_MS = 8000;
+
+const DEBATE_MOVES = [
+  'Give a concrete counter-example that proves the opposite',
+  'Challenge the hidden assumption behind the user\'s argument',
+  'Agree partially, then point out the biggest flaw',
+  'Play devil\'s advocate: defend the extreme version of the opposite side',
+  'Back your counter-argument with a fact, number or everyday observation',
+  'Ask a rhetorical question that makes the user doubt their own claim',
+];
+
+let lastMoveIndex = -1;
+
+function pickDebateMove(): string {
+  if (DEBATE_MOVES.length > 1) {
+    let moveIndex: number;
+    do {
+      moveIndex = Math.floor(Math.random() * DEBATE_MOVES.length);
+    } while (moveIndex === lastMoveIndex);
+    lastMoveIndex = moveIndex;
+    return DEBATE_MOVES[moveIndex];
+  }
+  return DEBATE_MOVES[0];
+}
 
 export const POST: APIRoute = async ({ request }) => {
   try {
@@ -47,6 +70,7 @@ export const POST: APIRoute = async ({ request }) => {
       : '(No previous history)';
     const debatePrompt = FLUENCY_CONTINUE_PROMPT
       .replace('{topic}', topic)
+      .replace('{move}', pickDebateMove())
       .replace('{history}', historyStr)
       .replace('{text}', text);
 
@@ -112,7 +136,11 @@ export const POST: APIRoute = async ({ request }) => {
           let sentenceBuffer = '';
           // Use debatePrompt + text as combined prompt for streaming
           const fullPrompt = `${debatePrompt}\n\nUser: ${text}`;
-          for await (const chunk of generateResponseStream(fullPrompt)) {
+          for await (const chunk of generateResponseStream(fullPrompt, FLUENCY_CONTINUE_SYSTEM_PROMPT, {
+            temperature: 0.8,
+            repeat_penalty: 1.1,
+            n_predict: 95,
+          })) {
             if (streamClosed) break;
             send({ chunk });
             sentenceBuffer += chunk;
