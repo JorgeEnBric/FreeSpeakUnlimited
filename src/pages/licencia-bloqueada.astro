@@ -16,6 +16,11 @@ const hwid = getHWIDExport();
     code { display: block; background: #f1f5f9; padding: 0.75rem; border-radius: 8px; font-family: monospace; word-break: break-all; margin: 1rem 0; font-size: 0.85rem; }
     button { background: #4f46e5; color: #fff; border: none; padding: 0.5rem 1.5rem; border-radius: 8px; cursor: pointer; font-size: 0.9rem; }
     button:hover { background: #4338ca; }
+    hr { border: none; border-top: 1px solid #e2e8f0; margin: 1.5rem 0 1rem; }
+    .support-title { font-family: monospace; font-size: 0.75rem; font-weight: 600; letter-spacing: 0.1em; text-transform: uppercase; color: #64748b; margin: 0 0 0.35rem; }
+    .support-line { margin: 0.15rem 0; font-size: 0.9rem; }
+    .support-line a { color: #4f46e5; text-decoration: none; }
+    .support-line a:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
@@ -24,6 +29,10 @@ const hwid = getHWIDExport();
     <p>Tu licencia no está activa o ha expirado. Envía el siguiente código al administrador para activarla.</p>
     <code id="hwid">{hwid}</code>
     <button id="copy">Copiar HWID</button>
+    <hr />
+    <p class="support-title">Equipo de soporte</p>
+    <p class="support-line">Jorge Briceño — Ing. Software</p>
+    <p class="support-line">WhatsApp: <a href="https://wa.me/573177552321" target="_blank" rel="noopener noreferrer">317 755 2321</a></p>
   </div>
   <script>
     document.getElementById('copy')?.addEventListener('click', () => {

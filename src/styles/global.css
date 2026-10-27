@@ -1034,6 +1034,32 @@ h4 {
   color: var(--text-secondary);
 }
 
+/* ---------- Support contact ---------- */
+.support-block {
+  text-align: center;
+  background: var(--surface-3);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.75rem;
+  margin: 0.5rem 0;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  line-height: 1.5;
+}
+
+.support-block p {
+  margin: 0;
+}
+
+.support-block a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.support-block a:hover {
+  text-decoration: underline;
+}
+
 /* ---------- Theme toggle ---------- */
 .theme-toggle {
   display: inline-flex;
