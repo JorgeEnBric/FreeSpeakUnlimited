@@ -55,6 +55,7 @@
   let nextPlayTime = 0;
   let activeSources = [];
   let currentChatAbort = null;
+  let topicReady = false;
 
   const recordBtn = document.getElementById('fluency-record-btn');
   const pauseBtn = document.getElementById('fluency-pause-btn');
@@ -71,6 +72,9 @@
     const detail = (event as CustomEvent).detail;
     if (detail) phase.handlePoll(detail);
   });
+
+  window.addEventListener('fluency-topic-ready', () => { topicReady = true; });
+  window.addEventListener('fluency-topic-reset', () => { topicReady = false; });
 
   function getCurrentTopic() {
     const el = document.getElementById('fluency-topic-text');
@@ -196,6 +200,10 @@
   }
 
   async function startRecording() {
+    if (!topicReady) {
+      if (status) status.textContent = 'Press "New debate" first.';
+      return;
+    }
     try {
       mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioChunks = [];

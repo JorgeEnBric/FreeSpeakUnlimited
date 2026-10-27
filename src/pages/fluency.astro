@@ -93,6 +93,7 @@ import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.ast
 
   async function loadNewTopic() {
     if (!topicTextEl || !newTopicBtn) return;
+    window.dispatchEvent(new CustomEvent('fluency-topic-reset'));
     newTopicBtn.disabled = true;
     newTopicBtn.textContent = 'Generating...';
     topicTextEl.textContent = 'Generating topic...';
@@ -101,6 +102,7 @@ import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.ast
       const data = await res.json();
       if (data.topic) {
         topicTextEl.textContent = data.topic;
+        window.dispatchEvent(new CustomEvent('fluency-topic-ready'));
         // Limpiar chat por completo
         const chat = document.getElementById('fluency-chat');
         if (chat) chat.innerHTML = '';
