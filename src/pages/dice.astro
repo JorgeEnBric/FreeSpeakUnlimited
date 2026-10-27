@@ -323,6 +323,9 @@ import DiceRecorder from '../components/DiceRecorder.astro';
       const res = await fetch(`/api/fluency-corrections-status?since=${lastDiceCorrectionId}&debateId=${currentDiceDebateId}`);
       const data = await res.json();
       renderDicePanel(data);
+      window.dispatchEvent(new CustomEvent('analysis-phase', {
+        detail: { analyzing: !!data.analyzing, queueLength: data.queueLength ?? 0 },
+      }));
     } catch (e) {
       console.error('[pollDice]', e);
     }

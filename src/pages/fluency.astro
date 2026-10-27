@@ -267,6 +267,9 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       const res = await fetch(`/api/fluency-corrections-status?since=${lastDebateCorrectionId}&debateId=${currentDebateId}`);
       const data = await res.json();
       renderFluencyPanel(data);
+      window.dispatchEvent(new CustomEvent('analysis-phase', {
+        detail: { analyzing: !!data.analyzing, queueLength: data.queueLength ?? 0 },
+      }));
     } catch (e) { console.error('[pollFluency]', e); }
   }
 

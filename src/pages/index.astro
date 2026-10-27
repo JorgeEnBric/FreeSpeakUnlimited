@@ -229,6 +229,9 @@ import AudioRecorder from '../components/AudioRecorder.astro';
       const res = await fetch(`/api/corrections-status?since=${lastCorrectionId}`);
       const data = await res.json();
       renderCorrectionsPanel(data);
+      window.dispatchEvent(new CustomEvent('analysis-phase', {
+        detail: { analyzing: !!data.analyzing, queueLength: data.queueLength ?? 0 },
+      }));
     } catch (e) {
       console.error('[pollCorrections]', e);
     }
