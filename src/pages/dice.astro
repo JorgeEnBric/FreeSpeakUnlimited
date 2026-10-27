@@ -101,6 +101,12 @@ import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.ast
   const diceCard = document.querySelector('.dice-card');
   let rolling = false;
 
+  const MAX_SPIN_MS = 3200;
+  const SETTLE_MS = 300;
+  const rollSound = new Audio('/dice-roll.mp3');
+  rollSound.loop = true;
+  rollSound.preload = 'auto';
+
   function showResult(data: any) {
     if (badgeEl) badgeEl.textContent = `${data.label} · die ${data.roll}`;
     if (questionEl) questionEl.textContent = data.question;
@@ -122,9 +128,25 @@ import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.ast
     diceCard?.classList.remove('compact');
     die?.classList.add('rolling');
     resetCorrections();
-    const spin = setInterval(() => {
+
+    const spinStart = Date.now();
+    let spinner: ReturnType<typeof setInterval> | null = null;
+    const stopSpinner = () => {
+      if (spinner) {
+        clearInterval(spinner);
+        spinner = null;
+      }
+      rollSound.pause();
+    };
+
+    try { rollSound.currentTime = 0; } catch {}
+    rollSound.play().catch(() => {});
+
+    spinner = setInterval(() => {
       if (numberEl) numberEl.textContent = String(1 + Math.floor(Math.random() * 12));
+      if (Date.now() - spinStart >= MAX_SPIN_MS) stopSpinner();
     }, 80);
+
     try {
       const res = await fetch('/api/dice-roll', {
         method: 'POST',
@@ -132,18 +154,21 @@ import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.ast
         body: '{}',
       });
       const data = await res.json();
-      await new Promise((r) => setTimeout(r, 300));
-      clearInterval(spin);
+      const elapsed = Date.now() - spinStart;
+      const settle = Math.max(0, Math.min(SETTLE_MS, MAX_SPIN_MS - elapsed));
+      if (settle > 0) await new Promise((r) => setTimeout(r, settle));
+      stopSpinner();
       if (numberEl) numberEl.textContent = String(data.roll ?? '?');
       if (data.question) {
         showResult(data);
+        void playQuestionTts(data.question);
       } else if (questionEl && resultEl) {
         questionEl.textContent = 'Could not get a question. Try again.';
         resultEl.classList.remove('hidden');
         window.dispatchEvent(new CustomEvent('dice-rolled'));
       }
     } catch (e) {
-      clearInterval(spin);
+      stopSpinner();
       console.error(e);
       if (questionEl && resultEl) {
         questionEl.textContent = 'Error rolling the die. Try again.';
@@ -161,12 +186,11 @@ import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.ast
 
   // Listen to the generated question
   let questionAudio: HTMLAudioElement | null = null;
-  document.getElementById('dice-listen')?.addEventListener('click', async (e) => {
-    const text = questionEl?.textContent?.trim() ?? '';
+  let questionAudioUrl: string | null = null;
+  async function playQuestionTts(text: string, btn?: HTMLButtonElement) {
     if (!text) return;
-    const btn = e.currentTarget as HTMLButtonElement;
     try {
-      btn.disabled = true;
+      if (btn) btn.disabled = true;
       const res = await fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -176,13 +200,24 @@ import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.ast
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       if (questionAudio) questionAudio.pause();
+      if (questionAudioUrl) URL.revokeObjectURL(questionAudioUrl);
+      questionAudioUrl = url;
       questionAudio = new Audio(url);
-      questionAudio.onended = () => { btn.disabled = false; URL.revokeObjectURL(url); };
+      questionAudio.onended = () => {
+        if (btn) btn.disabled = false;
+        if (questionAudioUrl) URL.revokeObjectURL(questionAudioUrl);
+        questionAudioUrl = null;
+      };
       await questionAudio.play();
     } catch (err) {
       console.error('TTS error:', err);
-      btn.disabled = false;
+      if (btn) btn.disabled = false;
     }
+  }
+
+  document.getElementById('dice-listen')?.addEventListener('click', (e) => {
+    const text = questionEl?.textContent?.trim() ?? '';
+    void playQuestionTts(text, e.currentTarget as HTMLButtonElement);
   });
 
   // Corrections polling for the current answer
@@ -437,7 +472,7 @@ import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.ast
   .dice-card { background: var(--surface-2); border: 1px solid var(--border-subtle); border-radius: var(--radius-md); padding: 1rem; margin-bottom: 1rem; border-left: 3px solid var(--accent); display: flex; flex-direction: column; gap: 0.75rem; align-items: center; transition: padding 0.25s ease, gap 0.25s ease, margin 0.25s ease; }
   .dice-stage { display: flex; flex-direction: column; align-items: center; gap: 0.85rem; }
   .die { width: 120px; height: 120px; display: grid; place-items: center; grid-template-rows: auto auto; background: linear-gradient(135deg, var(--accent), var(--accent-2)); clip-path: polygon(50% 0%, 75% 6.7%, 93.3% 25%, 100% 50%, 93.3% 75%, 75% 93.3%, 50% 100%, 25% 93.3%, 6.7% 75%, 0% 50%, 6.7% 25%, 25% 6.7%); filter: drop-shadow(0 8px 20px var(--accent-glow)); transition: width 0.25s ease, height 0.25s ease; }
-  .die.rolling { animation: diceRoll 0.3s ease-in-out; }
+  .die.rolling { animation: diceRoll 0.6s ease-in-out infinite; }
   @keyframes diceRoll { 0% { transform: rotate(0deg) scale(1); } 50% { transform: rotate(360deg) scale(1.12); } 100% { transform: rotate(720deg) scale(1); } }
   .die-number { font-size: 2.6rem; font-weight: 800; color: #fff; line-height: 1; transition: font-size 0.25s ease; }
   .die-label { font-family: var(--font-mono); font-size: 0.7rem; font-weight: 600; letter-spacing: 1px; color: rgba(255,255,255,0.85); transition: font-size 0.25s ease; }
