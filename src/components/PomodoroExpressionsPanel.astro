@@ -1,0 +1,225 @@
+<aside class="pomodoro-panel">
+  <h3>Pomodoro</h3>
+  <div class="pomodoro-time" id="pomodoro-time">25:00</div>
+  <div class="pomodoro-controls">
+    <button id="pomodoro-toggle" class="pomodoro-btn icon" aria-label="Start"><svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg></button>
+    <button id="pomodoro-reset" class="pomodoro-btn icon ghost" aria-label="Reset"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg></button>
+  </div>
+
+  <div class="panel-divider"></div>
+
+  <h3 class="expressions-title">New expressions</h3>
+  <p class="expressions-hint">Select text anywhere and right-click to save it here</p>
+  <div id="expressions-list" class="expressions-list">
+    <p class="expressions-empty">No expressions saved yet</p>
+  </div>
+</aside>
+
+<script>
+  // Pomodoro timer: 25 min work / 5 min break, with pause/resume.
+  // State persists in localStorage so the countdown keeps running across pages.
+  (() => {
+    const WORK_MIN = 25;
+    const BREAK_MIN = 5;
+    const STORAGE_KEY = 'fsp:pomodoro';
+    const timeEl = document.getElementById('pomodoro-time')!;
+    const toggleBtn = document.getElementById('pomodoro-toggle') as HTMLButtonElement;
+    const resetBtn = document.getElementById('pomodoro-reset') as HTMLButtonElement;
+    if (!timeEl || !toggleBtn || !resetBtn) return;
+
+    let mode: 'work' | 'break' = 'work';
+    let remaining = WORK_MIN * 60;
+    let running = false;
+    let intervalId: ReturnType<typeof setInterval> | null = null;
+    let endTime = 0;
+    let ringCtx: AudioContext | null = null;
+
+    function ensureRingCtx() {
+      if (!ringCtx) {
+        const Ctx = window.AudioContext || (window as any).webkitAudioContext;
+        ringCtx = new Ctx();
+      }
+      if (ringCtx.state === 'suspended') ringCtx.resume();
+      return ringCtx;
+    }
+
+    function playRing() {
+      try {
+        if (!ringCtx) return;
+        const ctx = ringCtx;
+        const now = ctx.currentTime;
+        const notes = [880, 880, 880, 660];
+        const step = 0.3;
+        const dur = 0.22;
+        notes.forEach((freq, i) => {
+          const start = now + i * step;
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'square';
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.0001, start);
+          gain.gain.exponentialRampToValueAtTime(0.25, start + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, start + dur);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start(start);
+          osc.stop(start + dur + 0.05);
+        });
+      } catch (e) {
+        console.error('Ring sound error:', e);
+      }
+    }
+
+    function fmt(totalSeconds: number) {
+      const s = Math.max(0, Math.ceil(totalSeconds));
+      return `${String(Math.floor(s / 60)).padStart(2, '0')}:${String(s % 60).padStart(2, '0')}`;
+    }
+
+    const playIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>';
+    const pauseIcon = '<svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg>';
+
+    function save() {
+      try {
+        const rem = running ? Math.max(0, (endTime - Date.now()) / 1000) : remaining;
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({ mode, remaining: rem, running, endTime: running ? endTime : 0 }));
+      } catch {}
+    }
+
+    function restore() {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (!raw) return;
+        const state = JSON.parse(raw);
+        if (state.mode === 'work' || state.mode === 'break') mode = state.mode;
+        const rem = Number(state.remaining);
+        if (Number.isFinite(rem) && rem >= 0) remaining = rem;
+
+        if (state.running && Number.isFinite(Number(state.endTime)) && Number(state.endTime) > 0) {
+          const left = (Number(state.endTime) - Date.now()) / 1000;
+          if (left > 0) {
+            running = true;
+            endTime = Number(state.endTime);
+            remaining = left;
+            intervalId = setInterval(tick, 200);
+          } else {
+            // Session ended while on another page: move to the next mode, paused.
+            mode = mode === 'work' ? 'break' : 'work';
+            remaining = (mode === 'work' ? WORK_MIN : BREAK_MIN) * 60;
+            running = false;
+          }
+        }
+
+        save();
+      } catch {}
+    }
+
+    function render() {
+      timeEl.textContent = fmt(remaining);
+      toggleBtn.innerHTML = running ? pauseIcon : playIcon;
+      toggleBtn.setAttribute('aria-label', running ? 'Pause' : 'Start');
+      toggleBtn.classList.toggle('active', running);
+      toggleBtn.classList.toggle('hidden', remaining === 0);
+    }
+
+    function tick() {
+      remaining = Math.max(0, (endTime - Date.now()) / 1000);
+      if (remaining <= 0) {
+        if (intervalId) clearInterval(intervalId);
+        intervalId = null;
+        running = false;
+        switchMode();
+      }
+      render();
+    }
+
+    function switchMode() {
+      playRing();
+      mode = mode === 'work' ? 'break' : 'work';
+      remaining = (mode === 'work' ? WORK_MIN : BREAK_MIN) * 60;
+      startTimer();
+    }
+
+    function startTimer() {
+      if (remaining <= 0) return;
+      running = true;
+      endTime = Date.now() + remaining * 1000;
+      if (intervalId) clearInterval(intervalId);
+      intervalId = setInterval(tick, 200);
+      render();
+      save();
+    }
+
+    function pauseTimer() {
+      running = false;
+      if (intervalId) clearInterval(intervalId);
+      intervalId = null;
+      render();
+      save();
+    }
+
+    function resetTimer() {
+      running = false;
+      if (intervalId) clearInterval(intervalId);
+      intervalId = null;
+      mode = 'work';
+      remaining = WORK_MIN * 60;
+      render();
+      save();
+    }
+
+    toggleBtn.addEventListener('click', () => {
+      ensureRingCtx();
+      if (running) pauseTimer();
+      else startTimer();
+    });
+
+    resetBtn.addEventListener('click', resetTimer);
+
+    window.addEventListener('pagehide', save);
+
+    restore();
+    render();
+  })();
+
+  // New Expressions panel: load saved expressions as mini cards
+  const expressionsList = document.getElementById('expressions-list');
+  async function loadExpressions() {
+    if (!expressionsList) return;
+    try {
+      const res = await fetch('/api/expressions');
+      const data = await res.json();
+      if (data.expressions) {
+        if (data.expressions.length === 0) {
+          expressionsList.innerHTML = '<p class="expressions-empty">No expressions saved yet</p>';
+        } else {
+          expressionsList.innerHTML = data.expressions
+            .map((e: { id: number; expression: string }) => `
+              <div class="miniTarjeta">
+                <span class="miniTarjeta-text">${e.expression}</span>
+                <button class="miniTarjeta-check" data-id="${e.id}" title="Mark as learned">✔</button>
+              </div>`)
+            .join('');
+        }
+      }
+    } catch (error) {
+      console.error('Error loading expressions:', error);
+    }
+  }
+  loadExpressions();
+
+  window.addEventListener('expressions-updated', () => { loadExpressions(); });
+
+  // Delete expression on check click
+  expressionsList?.addEventListener('click', async (event) => {
+    const btn = (event.target as HTMLElement).closest('.miniTarjeta-check');
+    if (!btn) return;
+    const id = (btn as HTMLElement).dataset.id;
+    if (!id) return;
+    try {
+      await fetch(`/api/expressions/${id}`, { method: 'DELETE' });
+      await loadExpressions();
+    } catch (error) {
+      console.error('Error deleting expression:', error);
+    }
+  });
+</script>

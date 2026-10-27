@@ -1,6 +1,7 @@
 ---
 import Layout from '../layouts/Layout.astro';
 import DiceRecorder from '../components/DiceRecorder.astro';
+import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.astro';
 ---
 
 <Layout title="Dice Roller">
@@ -54,6 +55,8 @@ import DiceRecorder from '../components/DiceRecorder.astro';
           <p class="trace-empty">Roll the die and answer to get corrections</p>
         </div>
       </aside>
+
+      <PomodoroExpressionsPanel />
     </div>
   </main>
 
@@ -401,6 +404,7 @@ import DiceRecorder from '../components/DiceRecorder.astro';
       });
       const data = await res.json();
       if (data.error) alert(`Error: ${data.error}`);
+      else window.dispatchEvent(new CustomEvent('expressions-updated'));
     } catch (e) { console.error(e); }
   });
 

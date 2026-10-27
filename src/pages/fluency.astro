@@ -2,6 +2,7 @@
 import Layout from '../layouts/Layout.astro';
 import ChatDisplay from '../components/ChatDisplay.astro';
 import FluencyRecorder from '../components/FluencyRecorder.astro';
+import PomodoroExpressionsPanel from '../components/PomodoroExpressionsPanel.astro';
 ---
 
 <Layout title="Fluency Practice">
@@ -52,6 +53,8 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
           <p class="trace-empty">Speak to get automatic corrections</p>
         </div>
       </aside>
+
+      <PomodoroExpressionsPanel />
     </div>
   </main>
 
@@ -347,6 +350,7 @@ import FluencyRecorder from '../components/FluencyRecorder.astro';
       const res = await fetch('/api/expressions/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(contextMenuItem) });
       const data = await res.json();
       if (data.error) alert(`Error: ${data.error}`);
+      else window.dispatchEvent(new CustomEvent('expressions-updated'));
     } catch (e) { console.error(e); }
   });
   document.getElementById('ctx-translate')?.addEventListener('click', async () => {
