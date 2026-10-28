@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { addLog } from '../../lib/log-store';
 import { DICE_CONTINUE_SYSTEM_PROMPT, DICE_CONTINUE_PROMPT, DICE_SUGGESTIONS_SYSTEM_PROMPT } from '../../lib/prompts';
 import { getStructureByCode, pickFallbackAnswers } from '../../lib/dice';
 
@@ -180,7 +181,7 @@ export const POST: APIRoute = async ({ request }) => {
           cleanup();
           streamClosed = true;
           try { controller.close(); } catch {}
-          console.log(`Dice-continue: ${sentencesWritten} sentences, ${audioChunksSent} audio chunks in ${Date.now() - t0}ms`);
+          addLog(`Dice-continue: ${sentencesWritten} sentences, ${audioChunksSent} audio chunks in ${Date.now() - t0}ms`);
         }
       },
       cancel() {

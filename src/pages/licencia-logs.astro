@@ -1,0 +1,33 @@
+---
+export const prerender = false;
+---
+<button id="closeBtn" class="btn-ghost" aria-label="Cerrar">&times;</button>
+<pre id="logOutput" style="font-family: monospace; white-space: pre-wrap; background: #f8f8f8; padding: 1rem; height: 90vh; overflow: auto;"></pre>
+
+<script is:inline>
+  const POLL_MS = 15000;
+  async function loadLogs() {
+    let data;
+    try {
+      const res = await fetch('/api/logs');
+      if (!res.ok) {
+        document.getElementById('logOutput').textContent = 'Error al cargar logs';
+        return;
+      }
+      data = await res.json();
+    } catch (e) {
+      document.getElementById('logOutput').textContent = 'Error de red';
+      return;
+    }
+    const { logs } = data;
+    const lic = logs.filter(([_, m]) => m.startsWith('[lic]'));
+    const lines = lic.map(([ts, m]) => `${new Date(ts).toLocaleTimeString()} • ${m}`).join('\n');
+    const output = document.getElementById('logOutput');
+    output.textContent = lines || 'Sin logs de licencia';
+    output.scrollTop = output.scrollHeight;
+  }
+  loadLogs();
+  setInterval(loadLogs, POLL_MS);
+
+  document.getElementById('closeBtn')?.addEventListener('click', () => window.close());
+</script>

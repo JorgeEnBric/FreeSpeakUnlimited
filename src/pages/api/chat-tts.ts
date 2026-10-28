@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { addLog } from '../../lib/log-store';
 import { checkModels, generateResponseStream } from '../../lib/modelManager';
 import { ensurePiperStarted, isPiperRunning, writeSentence, onPiperAudio } from '../../lib/piperStream';
 import { splitSentences } from '../../lib/sentenceSplitter';
@@ -123,10 +124,10 @@ export const POST: APIRoute = async ({ request }) => {
           streamClosed = true;
           try { controller.close(); } catch { /* already closed */ }
           const modelMs = Date.now() - t0;
-          console.log(`Tiempo en modelo IA: ${Math.round(modelMs / 1000)} segundos`);
-          console.log(`TTS stream: ${sentencesWritten} sentencias escritas, ${audioChunksSent} chunks de audio enviados`);
+          addLog(`Tiempo en modelo IA: ${Math.round(modelMs / 1000)} segundos`);
+          addLog(`TTS stream: ${sentencesWritten} sentencias escritas, ${audioChunksSent} chunks de audio enviados`);
           if (startTime) {
-            console.log(`Tiempo total: ${Math.round((Date.now() - startTime) / 1000)} segundos`);
+            addLog(`Tiempo total: ${Math.round((Date.now() - startTime) / 1000)} segundos`);
           }
         }
       },
