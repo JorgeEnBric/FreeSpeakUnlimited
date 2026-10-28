@@ -9,7 +9,9 @@ export const onRequest = defineMiddleware(async (context, next) => {
   if (
     path.startsWith('/_astro') ||
     path.startsWith('/favicon') ||
-    path === '/licencia-bloqueada'
+    path === '/licencia-bloqueada' ||
+    path === '/log' ||
+    path === '/licencia-logs'
   ) {
     addLog('[mid] path excluido');
     return next();
