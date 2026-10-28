@@ -66,8 +66,21 @@ const hwid = (await import('../lib/license-client')).getHWIDExport();
         </div>
         <button id="settings-btn" class="gear-btn" aria-label="Settings">
           <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.72l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/></svg>
+</button>
+        <button id="logBtn" class="gear-btn" aria-label="Ver logs">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" fill="none"/>
+            <line x1="5" y1="5" x2="20" y2="5"/>
+            <line x1="5" y1="7" x2="20" y2="7"/>
+            <line x1="5" y1="9" x2="20" y2="9"/>
+            <line x1="5" y1="11" x2="20" y2="11"/>
+            <line x1="5" y1="13" x2="20" y2="13"/>
+            <line x1="5" y1="15" x2="20" y2="15"/>
+            <line x1="5" y1="17" x2="20" y2="17"/>
+            <line x1="5" y1="19" x2="20" y2="19"/>
+          </svg>
         </button>
-      </div>
+       </div>
     </header>
 
     <slot />
@@ -88,6 +101,7 @@ const hwid = (await import('../lib/license-client')).getHWIDExport();
           <code id="license-hwid" class="settings-hwid">{hwid}</code>
           <button id="copy-hwid-btn" class="btn-ghost settings-action">Copy HWID</button>
         </div>
+        <button id="clear-log-btn" class="clear-btn settings-action">Clear logs</button>
         <p class="settings-subtitle">Equipo de soporte</p>
         <div class="support-block">
           <p>Jorge Briceño — Ing. Software</p>
@@ -130,6 +144,26 @@ const hwid = (await import('../lib/license-client')).getHWIDExport();
             clearBtn.disabled = false;
             clearBtn.textContent = original;
             sModal?.classList.add('hidden');
+          }
+        });
+
+        var clearLogBtn = document.getElementById('clear-log-btn');
+        clearLogBtn?.addEventListener('click', async function () {
+          if (!confirm('Clear logs stored in memory? This cannot be undone.')) return;
+          try {
+            var res = await fetch('/api/logs', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ clear: true }),
+            });
+            var data = await res.json();
+            if (data.cleared) {
+              alert('Logs cleared');
+            } else if (data.error) {
+              alert(data.error);
+            }
+          } catch (err) {
+            alert('Error clearing logs');
           }
         });
       })();
@@ -221,6 +255,15 @@ const hwid = (await import('../lib/license-client')).getHWIDExport();
 
         refresh();
         setInterval(refresh, 60000);
+      })();
+    </script>
+  <script is:inline>
+      (function () {
+        var logBtn = document.getElementById('logBtn');
+        if (!logBtn) return;
+        logBtn.addEventListener('click', function () {
+          window.open('/log', '_blank');
+        });
       })();
     </script>
   </body>

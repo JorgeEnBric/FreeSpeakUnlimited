@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { addLog } from '../../lib/log-store';
 import { writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
@@ -53,8 +54,8 @@ export const POST: APIRoute = async ({ request }) => {
       const t0 = Date.now();
       const { text: transcription, uncertainWords } = await transcribeAudio(audioPath);
       const whisperMs = Date.now() - t0;
-      console.log(`Hora inicio: ${fmtDateTime(new Date(startTime))}`);
-      console.log(`Tiempo en Whisper: ${Math.round(whisperMs / 1000)} segundos`);
+      addLog(`Hora inicio: ${fmtDateTime(new Date(startTime))}`);
+      addLog(`Tiempo en Whisper: ${Math.round(whisperMs / 1000)} segundos`);
 
       return new Response(JSON.stringify({ transcription, uncertainWords }), {
         status: 200,

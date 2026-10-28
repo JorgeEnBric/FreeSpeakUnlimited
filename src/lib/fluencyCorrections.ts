@@ -3,6 +3,7 @@ import { join } from 'path';
 import { isRunning, ensureStarted, complete } from './llamaServer';
 import { findLlamaCli, getLlamaBinDir, getGemmaModelPath } from './modelConfig';
 import { PATTERN_LIST, CORRECTIONS_SYSTEM_PROMPT, DICE_CORRECTIONS_SYSTEM_PROMPT } from './prompts';
+import { addLog } from './log-store';
 import { getStructureByCode } from './dice';
 
 const TEMP_DIR = join(process.cwd(), 'temp');
@@ -54,7 +55,7 @@ async function analyzeDebateMessage(debateId: number): Promise<void> {
   const tQueued = debateQueuedAt.get(debateId);
   debateQueuedAt.delete(debateId);
   const tStart = tQueued ?? Date.now();
-  console.log(`[DebateCorrections] Analyzing debate ${debateId}...`);
+  addLog(`[DebateCorrections] Analyzing debate ${debateId}...`);
   const { initDB, getDebateById, insertDebateCorrection, markDebateAnalyzed, insertLog } = await import('./database');
   await initDB();
 
@@ -64,7 +65,7 @@ async function analyzeDebateMessage(debateId: number): Promise<void> {
       console.error(`[DebateCorrections] Debate ${debateId} not found`);
       return;
     }
-    console.log(`[DebateCorrections] Debate ${debateId}: "${debate.text.substring(0, 50)}..."`);
+    addLog(`[DebateCorrections] Debate ${debateId}: "${debate.text.substring(0, 50)}..."`);
 
     const subSentences: string[] = debate.text.split('\n').filter(s => s.trim().length > 0);
     if (subSentences.length === 0) {
@@ -86,23 +87,23 @@ async function analyzeDebateMessage(debateId: number): Promise<void> {
     let raw = '';
     await ensureStarted();
     if (isRunning()) {
-      console.log(`[DebateCorrections] Calling LLM for debate ${debateId}...`);
+      addLog(`[DebateCorrections] Calling LLM for debate ${debateId}...`);
       const result = await complete(userPrompt, systemPrompt, { n_predict: 120, timeoutMs: 180000 });
       if (result) raw = result;
-      console.log(`[DebateCorrections] LLM response length: ${raw.length}`);
+      addLog(`[DebateCorrections] LLM response length: ${raw.length}`);
     } else {
-      console.log(`[DebateCorrections] LLM server not running for debate ${debateId}`);
+      addLog(`[DebateCorrections] LLM server not running for debate ${debateId}`);
     }
 
     if (!raw) {
       const modelPath = getGemmaModelPath();
       const llamaCli = findLlamaCli();
       if (!existsSync(llamaCli)) {
-        console.log(`[DebateCorrections] llama-cli.exe not found`);
+        addLog(`[DebateCorrections] llama-cli.exe not found`);
         await insertLog('debate_corrections', `llama-cli.exe not found for debate ${debateId}`);
         return;
       }
-      console.log(`[DebateCorrections] Falling back to CLI for debate ${debateId}...`);
+      addLog(`[DebateCorrections] Falling back to CLI for debate ${debateId}...`);
       const ts = Date.now();
       const outFile = join(TEMP_DIR, `debate-corr-${ts}.txt`);
       // @ts-ignore execFileSync types
@@ -190,9 +191,9 @@ async function analyzeDebateMessage(debateId: number): Promise<void> {
       await insertLog('debate_corrections', `WARN debate ${debateId}: blocks ${corrBlocks.length} != sentences ${subSentences.length}, raw len ${raw.length}`);
     }
 
-    console.log(`[DebateCorrections] Debate ${debateId} processed (${corrBlocks.length} blocks found) in ${processingMs}ms`);
+    addLog(`[DebateCorrections] Debate ${debateId} processed (${corrBlocks.length} blocks found) in ${processingMs}ms`);
   } finally {
     await markDebateAnalyzed([debateId]);
-    console.log(`[DebateCorrections] Debate ${debateId} marked as analyzed`);
+    addLog(`[DebateCorrections] Debate ${debateId} marked as analyzed`);
   }
 }

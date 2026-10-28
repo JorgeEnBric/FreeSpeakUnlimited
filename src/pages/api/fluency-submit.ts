@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { addLog } from '../../lib/log-store';
 import { FLUENCY_CONTINUE_PROMPT, FLUENCY_CONTINUE_SYSTEM_PROMPT } from '../../lib/prompts';
 import { checkModels, generateResponseStream } from '../../lib/modelManager';
 import { ensurePiperStarted, isPiperRunning, writeSentence, onPiperAudio } from '../../lib/piperStream';
@@ -169,8 +170,8 @@ export const POST: APIRoute = async ({ request }) => {
           streamClosed = true;
           try { controller.close(); } catch {}
           const modelMs = Date.now() - t0;
-          console.log(`Fluency debateId ${debateId} Tiempo en modelo IA: ${Math.round(modelMs / 1000)}s`);
-          console.log(`Fluency TTS: ${sentencesWritten} sentencias, ${audioChunksSent} chunks`);
+          addLog(`Fluency debateId ${debateId} Tiempo en modelo IA: ${Math.round(modelMs / 1000)}s`);
+          addLog(`Fluency TTS: ${sentencesWritten} sentencias, ${audioChunksSent} chunks`);
         }
       },
       cancel() {

@@ -4,6 +4,7 @@ import { execFileSync } from 'child_process';
 import { isRunning, ensureStarted, complete } from './llamaServer';
 import { findLlamaCli, getLlamaBinDir, getGemmaModelPath } from './modelConfig';
 import { PATTERN_LIST, CORRECTIONS_SYSTEM_PROMPT } from './prompts';
+import { addLog } from './log-store';
 
 const TEMP_DIR = join(process.cwd(), 'temp');
 
@@ -56,7 +57,7 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
   const tQueued = queuedAt.get(messageId);
   queuedAt.delete(messageId);
   const tStart = tQueued ?? Date.now();
-  console.log(`[Corrections] Analyzing message ${messageId}...`);
+  addLog(`[Corrections] Analyzing message ${messageId}...`);
   const { initDB, getMessageById, insertCorrection, markAnalyzed, insertLog } = await import('./database');
   await initDB();
 
@@ -66,7 +67,7 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
       console.error(`[Corrections] Message ${messageId} not found`);
       return;
     }
-    console.log(`[Corrections] Message ${messageId}: "${message.text.substring(0, 50)}..."`);
+    addLog(`[Corrections] Message ${messageId}: "${message.text.substring(0, 50)}..."`);
 
     const subSentences: string[] = message.text.split('\n').filter(s => s.trim().length > 0);
     if (subSentences.length === 0) return;
@@ -78,23 +79,23 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
     let raw = '';
     await ensureStarted();
     if (isRunning()) {
-      console.log(`[Corrections] Calling LLM for message ${messageId}...`);
+      addLog(`[Corrections] Calling LLM for message ${messageId}...`);
       const result = await complete(userPrompt, systemPrompt, { n_predict: 120, timeoutMs: 180000 });
       if (result) raw = result;
-      console.log(`[Corrections] LLM response length: ${raw.length}`);
+      addLog(`[Corrections] LLM response length: ${raw.length}`);
     } else {
-      console.log(`[Corrections] LLM server not running for message ${messageId}`);
+      addLog(`[Corrections] LLM server not running for message ${messageId}`);
     }
 
     if (!raw) {
       const modelPath = getGemmaModelPath();
       const llamaCli = findLlamaCli();
       if (!existsSync(llamaCli)) {
-        console.log(`[Corrections] llama-cli.exe not found, marking as analyzed without corrections`);
+        addLog(`[Corrections] llama-cli.exe not found, marking as analyzed without corrections`);
         await insertLog('corrections', `llama-cli.exe not found for msg ${messageId}`);
         return;
       }
-      console.log(`[Corrections] Falling back to CLI for message ${messageId}...`);
+      addLog(`[Corrections] Falling back to CLI for message ${messageId}...`);
       const ts = Date.now();
       const outFile = join(TEMP_DIR, `corr-${ts}.txt`);
       execFileSync(llamaCli, [
@@ -185,9 +186,9 @@ async function analyzeSingleMessage(messageId: number): Promise<void> {
       await insertLog('corrections', `WARN msg ${messageId}: blocks ${blocks.length} != sentences ${subSentences.length}, raw len ${raw.length}`);
     }
 
-    console.log(`[Corrections] Message ${messageId} processed (${blocks.length} blocks found) in ${processingMs}ms`);
+    addLog(`[Corrections] Message ${messageId} processed (${blocks.length} blocks found) in ${processingMs}ms`);
   } finally {
     await markAnalyzed([messageId]);
-    console.log(`[Corrections] Message ${messageId} marked as analyzed`);
+    addLog(`[Corrections] Message ${messageId} marked as analyzed`);
   }
 }

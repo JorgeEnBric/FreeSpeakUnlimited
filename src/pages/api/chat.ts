@@ -1,4 +1,5 @@
 import type { APIRoute } from 'astro';
+import { addLog } from '../../lib/log-store';
 import { checkModels, generateResponseStream } from '../../lib/modelManager';
 
 export const prerender = false;
@@ -49,9 +50,9 @@ export const POST: APIRoute = async ({ request }) => {
           }) + '\n'));
         } finally {
           const modelMs = Date.now() - t0;
-          console.log(`Tiempo en modelo IA: ${Math.round(modelMs / 1000)} segundos`);
+          addLog(`Tiempo en modelo IA: ${Math.round(modelMs / 1000)} segundos`);
           if (startTime) {
-            console.log(`Tiempo total: ${Math.round((Date.now() - startTime) / 1000)} segundos`);
+            addLog(`Tiempo total: ${Math.round((Date.now() - startTime) / 1000)} segundos`);
           }
           controller.close();
         }
