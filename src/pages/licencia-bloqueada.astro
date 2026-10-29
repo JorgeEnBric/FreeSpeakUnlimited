@@ -35,17 +35,6 @@ const hwid = getHWIDExport();
     <p class="support-line">Jorge Briceño — Ing. Software</p>
 <p class="support-line">WhatsApp: <a href="https://wa.me/573177552321" target="_blank" rel="noopener noreferrer">317 755 2321</a></p>
     <button id="testLicBtn" class="gear-btn" aria-label="Probar licencia ahora">
-      <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-        <rect x="3" y="3" width="18" height="18" rx="2" fill="none"/>
-        <line x1="5" y1="5" x2="20" y2="5"/>
-        <line x1="5" y1="7" x2="20" y2="7"/>
-        <line x1="5" y1="9" x2="20" y2="9"/>
-        <line x1="5" y1="11" x2="20" y2="11"/>
-        <line x1="5" y1="13" x2="20" y2="13"/>
-        <line x1="5" y1="15" x2="20" y2="15"/>
-        <line x1="5" y1="17" x2="20" y2="17"/>
-        <line x1="5" y1="19" x2="20" y2="19"/>
-      </svg>
       Probar licencia ahora
     </button>
     <pre id="licResult" style="font-family: monospace; white-space: pre-wrap; background: #f1f5f9; padding: 0.75rem; border-radius: 8px; margin-top: 1rem; font-size: 0.85rem; text-align: left; max-height: 200px; overflow: auto;"></pre>
@@ -87,7 +76,7 @@ const hwid = getHWIDExport();
             if (data.cause.code) lines.push(`cause.code: ${data.cause.code}`);
             if (data.cause.message) lines.push(`cause.message: ${data.cause.message}`);
           }
-          if (data.backendUrl) lines.push(`backendUrl: ${data.backendUrl}`);
+          /* if (data.backendUrl) lines.push(`backendUrl: ${data.backendUrl}`); */
           if (data.nodeVersion) lines.push(`nodeVersion: ${data.nodeVersion}`);
           if (data.stack) lines.push(`stack:\n${data.stack}`);
           display = lines.join('\n');
