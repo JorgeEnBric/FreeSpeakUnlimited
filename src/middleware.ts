@@ -11,7 +11,8 @@ export const onRequest = defineMiddleware(async (context, next) => {
     path.startsWith('/favicon') ||
     path === '/licencia-bloqueada' ||
     path === '/log' ||
-    path === '/licencia-logs'
+    path === '/licencia-logs' ||
+    path.startsWith('/api/logs')
   ) {
     addLog('[mid] path excluido');
     return next();
