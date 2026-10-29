@@ -73,8 +73,30 @@ const hwid = getHWIDExport();
         body: JSON.stringify({ hwid }),
       });
       const text = await res.text();
+      let display = `Status: ${res.status}\n\n${text}`;
+      try {
+        const data = JSON.parse(text);
+        if (res.status >= 400 && data && (data.message || data.name || data.code || data.cause || data.detail || data.backendUrl || data.stack)) {
+          const lines: string[] = [`Status: ${res.status}`];
+          if (data.error) lines.push(`Error: ${data.error}`);
+          if (data.name) lines.push(`name: ${data.name}`);
+          if (data.message) lines.push(`message: ${data.message}`);
+          if (data.code) lines.push(`code: ${data.code}`);
+          if (data.detail) lines.push(`detail: ${data.detail}`);
+          if (data.cause) {
+            if (data.cause.code) lines.push(`cause.code: ${data.cause.code}`);
+            if (data.cause.message) lines.push(`cause.message: ${data.cause.message}`);
+          }
+          if (data.backendUrl) lines.push(`backendUrl: ${data.backendUrl}`);
+          if (data.nodeVersion) lines.push(`nodeVersion: ${data.nodeVersion}`);
+          if (data.stack) lines.push(`stack:\n${data.stack}`);
+          display = lines.join('\n');
+        }
+      } catch {
+        /* respuesta no JSON: se muestra el texto crudo */
+      }
       if (resultEl) {
-        resultEl.textContent = `Status: ${res.status}\n\n${text}`;
+        resultEl.textContent = display;
       }
     } catch (err) {
       if (resultEl) {
