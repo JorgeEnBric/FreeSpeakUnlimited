@@ -76,9 +76,21 @@ const hwid = getHWIDExport();
             if (data.cause.code) lines.push(`cause.code: ${data.cause.code}`);
             if (data.cause.message) lines.push(`cause.message: ${data.cause.message}`);
           }
-          /* if (data.backendUrl) lines.push(`backendUrl: ${data.backendUrl}`); */
+          if (data.backendUrl) lines.push(`backendUrl: ${data.backendUrl}`);
           if (data.nodeVersion) lines.push(`nodeVersion: ${data.nodeVersion}`);
           if (data.stack) lines.push(`stack:\n${data.stack}`);
+          const isCertError =
+            data.code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' ||
+            data.cause?.code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' ||
+            /UNABLE_TO_GET_ISSUER_CERT_LOCALLY|unable to get local issuer certificate/i.test(
+              `${data.message ?? ''} ${data.cause?.message ?? ''}`
+            );
+          if (isCertError) {
+            lines.push('');
+            lines.push(
+              'Solución: copia el certificado .crt de tu CA corporativa en la carpeta public/ y reinicia el servidor.'
+            );
+          }
           display = lines.join('\n');
         }
       } catch {

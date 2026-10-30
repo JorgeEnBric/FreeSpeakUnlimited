@@ -1,4 +1,5 @@
 import { type APIRoute } from 'astro';
+import '../../lib/ca-loader';
 
 export const prerender = false;
 

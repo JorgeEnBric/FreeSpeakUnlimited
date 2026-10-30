@@ -1,3 +1,4 @@
+import './src/lib/ca-loader.ts';
 import { defineConfig } from 'astro/config';
 import basicSsl from '@vitejs/plugin-basic-ssl';
 
