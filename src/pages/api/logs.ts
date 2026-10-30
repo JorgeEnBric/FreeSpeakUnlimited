@@ -1,6 +1,8 @@
 import { type APIRoute } from 'astro';
 import { getLogs, clearLogs } from '../../lib/log-store';
 
+export const prerender = false;
+
 export const GET: APIRoute = async () => {
   return new Response(
     JSON.stringify({ logs: getLogs() }),
