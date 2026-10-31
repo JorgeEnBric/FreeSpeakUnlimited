@@ -64,8 +64,8 @@ export const POST: APIRoute = async ({ request }) => {
     const chunks: Buffer[] = [];
     const child = spawn(PIPER_EXE, [
       '--model', PIPER_VOICE_MODEL,
-      '--length_scale', '1.15',
-      '--noise_scale', '0.5',
+      '--length_scale', '1',
+      '--noise_scale', '0.667',
       '--output_raw',
     ]);
 
