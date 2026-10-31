@@ -1,5 +1,4 @@
 import type { APIRoute } from 'astro';
-declare const process: any;
 
 export const prerender = false;
 
@@ -25,31 +24,20 @@ export const POST: APIRoute = async ({ request }) => {
       });
     }
 
-    // Bypass TLS UNABLE_TO_GET_ISSUER_CERT_LOCALLY solo para api.mymemory (https) - scoped
-    const prevReject = process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-    process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
-    let translated: string | null = null;
-    try {
-      const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|es`;
-      const res = await fetch(url, {
-        headers: { 'Accept': 'application/json' },
-        signal: AbortSignal.timeout(8000),
-      });
-      if (!res.ok) throw new Error(`MyMemory ${res.status}`);
-      const data = (await res.json()) as {
-        responseStatus?: number;
-        responseData?: { translatedText?: string };
-        responseDetails?: string;
-      };
-      if (data.responseStatus !== 200) throw new Error(data.responseDetails || 'MyMemory failed');
-      const t = data.responseData?.translatedText?.trim() ?? '';
-      if (!t) throw new Error('Empty MyMemory translation');
-      translated = t;
-    } finally {
-      if (prevReject === undefined) delete process.env.NODE_TLS_REJECT_UNAUTHORIZED;
-      else process.env.NODE_TLS_REJECT_UNAUTHORIZED = prevReject;
-    }
-    if (!translated) throw new Error('MyMemory empty');
+    const url = `https://api.mymemory.translated.net/get?q=${encodeURIComponent(text)}&langpair=en|es`;
+    const res = await fetch(url, {
+      headers: { 'Accept': 'application/json' },
+      signal: AbortSignal.timeout(8000),
+    });
+    if (!res.ok) throw new Error(`MyMemory ${res.status}`);
+    const data = (await res.json()) as {
+      responseStatus?: number;
+      responseData?: { translatedText?: string };
+      responseDetails?: string;
+    };
+    if (data.responseStatus !== 200) throw new Error(data.responseDetails || 'MyMemory failed');
+    const translated = data.responseData?.translatedText?.trim() ?? '';
+    if (!translated) throw new Error('Empty MyMemory translation');
 
     return new Response(JSON.stringify({ translated }), {
       status: 200,

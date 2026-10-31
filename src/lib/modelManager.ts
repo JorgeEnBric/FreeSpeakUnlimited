@@ -2,8 +2,22 @@ import { existsSync, unlinkSync, readFileSync } from 'fs';
 import { join, basename } from 'path';
 import { CONVERSATION_SYSTEM_PROMPT as SYSTEM_PROMPT, SUGGESTION_SYSTEM_PROMPT } from './prompts';
 import { WHISPER_CLI, WHISPER_BIN_DIR, WHISPER_MODEL, findLlamaCli, getLlamaBinDir, getGemmaModelPath } from './modelConfig';
+import { APP_DIR, TEMP_DIR } from './paths';
 
-const TEMP_DIR = join(process.cwd(), 'temp');
+async function resolveFfmpegPath(): Promise<string | null> {
+  const fromEnv = process.env.FFMPEG_PATH;
+  if (fromEnv && existsSync(fromEnv)) return fromEnv;
+
+  const bundled = join(APP_DIR, 'ffmpeg.exe');
+  if (existsSync(bundled)) return bundled;
+
+  try {
+    const mod = await import('ffmpeg-static');
+    return mod.default ?? null;
+  } catch {
+    return null;
+  }
+}
 
 const UNCERTAIN_WORD_THRESHOLD = 0.94;
 
@@ -31,14 +45,14 @@ export function checkModels() {
 
 async function runWhisper(audioPath: string, modelPath: string): Promise<{ text: string; uncertainWords: string[] }> {
   const { execFile, execFileSync } = await import('child_process');
-  const ffmpegPath = (await import('ffmpeg-static')).default;
+  const ffmpegPath = await resolveFfmpegPath();
   const wavPath = audioPath.replace('.webm', '.wav');
   const baseName = join(TEMP_DIR, basename(wavPath, '.wav'));
   const txtPath = `${baseName}.txt`;
   const jsonPath = `${baseName}.json`;
 
   if (!ffmpegPath) {
-    throw new Error('ffmpeg-static binary not found');
+    throw new Error('ffmpeg binary not found (set FFMPEG_PATH or place ffmpeg.exe next to the app)');
   }
 
   // Convert webm to 16kHz mono wav with bundled ffmpeg

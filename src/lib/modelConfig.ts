@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, readdirSync } from 'fs';
 import { join, dirname, isAbsolute, resolve } from 'path';
+import { APP_DIR } from './paths';
 
-const ENV_FILE = join(process.cwd(), 'models.env');
+const ENV_FILE = join(APP_DIR, 'models.env');
 
 function parseEnvFile(path: string): Record<string, string> {
   const out: Record<string, string> = {};
@@ -30,7 +31,11 @@ let envCache: Record<string, string> | null = null;
 function modelEnv(): Record<string, string> {
   if (!envCache) {
     // Las variables de entorno reales tienen prioridad sobre el archivo.
-    envCache = { ...parseEnvFile(ENV_FILE), ...process.env };
+    const merged: Record<string, string> = { ...parseEnvFile(ENV_FILE) };
+    for (const [key, value] of Object.entries(process.env)) {
+      if (value !== undefined) merged[key] = value;
+    }
+    envCache = merged;
   }
   return envCache;
 }
@@ -38,16 +43,19 @@ function modelEnv(): Record<string, string> {
 function resolvePath(value: string | undefined): string | undefined {
   if (!value) return undefined;
   if (isAbsolute(value)) return value;
-  return resolve(process.cwd(), value);
+  return resolve(APP_DIR, value);
 }
 
 function modelsDir(): string {
-  return resolvePath(modelEnv().MODELS_DIR) ?? join(process.cwd(), 'src', 'models');
+  const configured = resolvePath(modelEnv().MODELS_DIR);
+  if (configured) return configured;
+  const devDir = join(APP_DIR, 'src', 'models');
+  return existsSync(devDir) ? devDir : join(APP_DIR, 'models');
 }
 
 // Piper TTS
 export const PIPER_EXE =
-  resolvePath(modelEnv().PIPER_EXE) ?? join(process.cwd(), 'piper', 'dist', 'piper', 'piper.exe');
+  resolvePath(modelEnv().PIPER_EXE) ?? join(modelsDir(), 'piper', 'dist', 'piper', 'piper.exe');
 export const PIPER_VOICE_MODEL =
   resolvePath(modelEnv().PIPER_VOICE_MODEL) ?? join(modelsDir(), 'en_US-lessac-medium.onnx');
 

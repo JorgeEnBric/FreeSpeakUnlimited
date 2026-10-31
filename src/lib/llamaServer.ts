@@ -1,17 +1,37 @@
 import { spawn, type ChildProcess } from 'child_process';
+import { createServer } from 'net';
 import { existsSync } from 'fs';
 import { CONVERSATION_SYSTEM_PROMPT, CORRECTIONS_SYSTEM_PROMPT, SUGGESTION_SYSTEM_PROMPT, FLUENCY_DEBATE_PROMPT, FLUENCY_CONTINUE_SYSTEM_PROMPT, DICE_QUESTION_PROMPT, DICE_CONTINUE_SYSTEM_PROMPT, DICE_SUGGESTIONS_SYSTEM_PROMPT } from './prompts';
 import { LLAMA_SERVER_EXE, LLAMA_SERVER_BIN_DIR, getGemmaModelPath } from './modelConfig';
 
 const HOST = '127.0.0.1';
-const PORT = 8080;
-const BASE_URL = `http://${HOST}:${PORT}`;
 
+let serverPort = 0;
 let serverProcess: ChildProcess | null = null;
 let starting = false;
 let startPromise: Promise<void> | null = null;
 let warmupState: 'idle' | 'running' | 'done' = 'idle';
 let warmupPromise: Promise<void> | null = null;
+
+function baseUrl(): string {
+  return `http://${HOST}:${serverPort}`;
+}
+
+function findFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const srv = createServer();
+    srv.unref();
+    srv.once('error', reject);
+    srv.listen(0, HOST, () => {
+      const address = srv.address();
+      const port = typeof address === 'object' && address ? address.port : 0;
+      srv.close(() => {
+        if (port > 0) resolve(port);
+        else reject(new Error('No free port available'));
+      });
+    });
+  });
+}
 
 export function isRunning(): boolean {
   return serverProcess !== null && !serverProcess.killed && serverProcess.exitCode === null;
@@ -25,7 +45,7 @@ async function waitForServer(timeoutMs = 45000): Promise<boolean> {
   const deadline = Date.now() + timeoutMs;
   while (Date.now() < deadline) {
     try {
-      const res = await fetch(`${BASE_URL}/health`, { signal: AbortSignal.timeout(3000) });
+      const res = await fetch(`${baseUrl()}/health`, { signal: AbortSignal.timeout(3000) });
       if (res.ok) return true;
     } catch { /* not ready yet */ }
     await new Promise(r => setTimeout(r, 1000));
@@ -49,10 +69,19 @@ export function ensureStarted(): Promise<void> {
       starting = false; resolve(); return;
     }
 
+    let port: number;
+    try {
+      port = await findFreePort();
+    } catch (err) {
+      console.warn('[llama-server] no free port available', err);
+      starting = false; resolve(); return;
+    }
+    serverPort = port;
+
     serverProcess = spawn(LLAMA_SERVER_EXE, [
       '-m', modelPath,
       '--host', HOST,
-      '--port', String(PORT),
+      '--port', String(port),
       '-c', '4096',
       '--parallel', '1',
       '--cache-reuse', '256',
@@ -91,7 +120,7 @@ export async function complete(
   if (!isRunning()) return null;
 
   try {
-    const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+    const res = await fetch(`${baseUrl()}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -121,7 +150,7 @@ export async function* completeStream(
 ): AsyncGenerator<string, void, unknown> {
   if (!isRunning()) return;
 
-  const res = await fetch(`${BASE_URL}/v1/chat/completions`, {
+  const res = await fetch(`${baseUrl()}/v1/chat/completions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -175,7 +204,7 @@ export async function* completeStream(
 
 async function primeCache(systemPrompt: string): Promise<void> {
   try {
-    await fetch(`${BASE_URL}/v1/chat/completions`, {
+    await fetch(`${baseUrl()}/v1/chat/completions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({

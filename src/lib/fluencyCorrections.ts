@@ -5,8 +5,7 @@ import { findLlamaCli, getLlamaBinDir, getGemmaModelPath } from './modelConfig';
 import { PATTERN_LIST, CORRECTIONS_SYSTEM_PROMPT, DICE_CORRECTIONS_SYSTEM_PROMPT } from './prompts';
 import { addLog } from './log-store';
 import { getStructureByCode } from './dice';
-
-const TEMP_DIR = join(process.cwd(), 'temp');
+import { TEMP_DIR } from './paths';
 
 let debateQueue: number[] = [];
 let isDebateAnalyzing = false;

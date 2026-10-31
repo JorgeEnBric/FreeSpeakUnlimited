@@ -1,4 +1,3 @@
-import './ca-loader';
 import { getHWID } from './hwid';
 import {
   setToken,

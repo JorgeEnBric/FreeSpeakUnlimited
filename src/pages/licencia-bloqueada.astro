@@ -33,11 +33,7 @@ const hwid = getHWIDExport();
     <hr />
     <p class="support-title">Equipo de soporte</p>
     <p class="support-line">Jorge Briceño — Ing. Software</p>
-<p class="support-line">WhatsApp: <a href="https://wa.me/573177552321" target="_blank" rel="noopener noreferrer">317 755 2321</a></p>
-    <button id="testLicBtn" class="gear-btn" aria-label="Probar licencia ahora">
-      Probar licencia ahora
-    </button>
-    <pre id="licResult" style="font-family: monospace; white-space: pre-wrap; background: #f1f5f9; padding: 0.75rem; border-radius: 8px; margin-top: 1rem; font-size: 0.85rem; text-align: left; max-height: 200px; overflow: auto;"></pre>
+    <p class="support-line">WhatsApp: <a href="https://wa.me/573177552321" target="_blank" rel="noopener noreferrer">317 755 2321</a></p>
    </div>
   <script>
     document.getElementById('copy')?.addEventListener('click', () => {
@@ -46,65 +42,6 @@ const hwid = getHWIDExport();
       const btn = document.getElementById('copy');
       if (btn) btn.textContent = '¡Copiado!';
     });
-    document.getElementById('testLicBtn')?.addEventListener('click', async () => {
-    const hwid = document.getElementById('hwid')?.textContent?.trim() ?? '';
-    const resultEl = document.getElementById('licResult');
-    if (!hwid) {
-      if (resultEl) resultEl.textContent = 'HWID vacío';
-      return;
-    }
-    if (resultEl) resultEl.textContent = 'Consultando backend…';
-    const BACKEND = '/api/license-validate';
-    try {
-      const res = await fetch(BACKEND, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hwid }),
-      });
-      const text = await res.text();
-      let display = `Status: ${res.status}\n\n${text}`;
-      try {
-        const data = JSON.parse(text);
-        if (res.status >= 400 && data && (data.message || data.name || data.code || data.cause || data.detail || data.backendUrl || data.stack)) {
-          const lines: string[] = [`Status: ${res.status}`];
-          if (data.error) lines.push(`Error: ${data.error}`);
-          if (data.name) lines.push(`name: ${data.name}`);
-          if (data.message) lines.push(`message: ${data.message}`);
-          if (data.code) lines.push(`code: ${data.code}`);
-          if (data.detail) lines.push(`detail: ${data.detail}`);
-          if (data.cause) {
-            if (data.cause.code) lines.push(`cause.code: ${data.cause.code}`);
-            if (data.cause.message) lines.push(`cause.message: ${data.cause.message}`);
-          }
-          if (data.backendUrl) lines.push(`backendUrl: ${data.backendUrl}`);
-          if (data.nodeVersion) lines.push(`nodeVersion: ${data.nodeVersion}`);
-          if (data.stack) lines.push(`stack:\n${data.stack}`);
-          const isCertError =
-            data.code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' ||
-            data.cause?.code === 'UNABLE_TO_GET_ISSUER_CERT_LOCALLY' ||
-            /UNABLE_TO_GET_ISSUER_CERT_LOCALLY|unable to get local issuer certificate/i.test(
-              `${data.message ?? ''} ${data.cause?.message ?? ''}`
-            );
-          if (isCertError) {
-            lines.push('');
-            lines.push(
-              'Solución: copia el certificado .crt de tu CA corporativa en la carpeta public/ y reinicia el servidor.'
-            );
-          }
-          display = lines.join('\n');
-        }
-      } catch {
-        /* respuesta no JSON: se muestra el texto crudo */
-      }
-      if (resultEl) {
-        resultEl.textContent = display;
-      }
-    } catch (err) {
-      if (resultEl) {
-        resultEl.textContent = `Error de red: ${(err as any)?.message || err}`;
-      }
-    }
-  });
   </script>
 </body>
 </html>

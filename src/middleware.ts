@@ -12,7 +12,6 @@ export const onRequest = defineMiddleware(async (context, next) => {
     path === '/licencia-bloqueada' ||
     path.startsWith('/api/license-validate')
   ) {
-    addLog('[mid] path excluido');
     return next();
   }
 

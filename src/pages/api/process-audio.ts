@@ -4,10 +4,9 @@ import { writeFile, mkdir, unlink } from 'fs/promises';
 import { join } from 'path';
 import { existsSync } from 'fs';
 import { transcribeAudio, checkModels } from '../../lib/modelManager';
+import { TEMP_DIR } from '../../lib/paths';
 
 export const prerender = false;
-
-const TEMP_DIR = join(process.cwd(), 'temp');
 
 function fmtDateTime(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');

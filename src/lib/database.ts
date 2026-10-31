@@ -1,7 +1,7 @@
 import { existsSync, readFileSync, writeFileSync } from 'fs';
-import { join } from 'path';
+import { DB_PATH, ensureDataDirs } from './paths';
 
-const DB_PATH = join(process.cwd(), 'data.db');
+export { DB_PATH };
 
 let db: any = null;
 
@@ -366,5 +366,6 @@ export async function clearDebateCorrections(debateId?: number | null): Promise<
 
 function save(): void {
   const data = db.export();
+  ensureDataDirs();
   writeFileSync(DB_PATH, Buffer.from(data));
 }

@@ -5,8 +5,7 @@ import { isRunning, ensureStarted, complete } from './llamaServer';
 import { findLlamaCli, getLlamaBinDir, getGemmaModelPath } from './modelConfig';
 import { PATTERN_LIST, CORRECTIONS_SYSTEM_PROMPT } from './prompts';
 import { addLog } from './log-store';
-
-const TEMP_DIR = join(process.cwd(), 'temp');
+import { TEMP_DIR } from './paths';
 
 let messageQueue: number[] = [];
 let isCurrentlyAnalyzing = false;
